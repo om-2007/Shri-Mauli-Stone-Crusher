@@ -154,10 +154,9 @@ export async function initDb() {
     value TEXT
   )`);
 
-  const stateCheck = await pool.query("SELECT * FROM system_state WHERE key = 'isDayStarted'");
-  if (stateCheck.rows.length === 0) {
-    await pool.query("INSERT INTO system_state (key, value) VALUES ('isDayStarted', 'false')");
-  }
+  await pool.query(
+    "INSERT INTO system_state (key, value) VALUES ('isDayStarted', 'false') ON CONFLICT (key) DO NOTHING"
+  );
 
   await pool.query(`CREATE TABLE IF NOT EXISTS owner_profile (
     id TEXT PRIMARY KEY,
@@ -168,20 +167,15 @@ export async function initDb() {
     enableMaintenanceAlerts BOOLEAN DEFAULT TRUE
   )`);
 
-  const owner = await pool.query("SELECT * FROM owner_profile");
-  if (owner.rows.length === 0) {
-    await pool.query(
-      "INSERT INTO owner_profile (id, name, phone, password) VALUES ($1, $2, $3, $4)",
-      [DEFAULT_OWNER.id, DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password]
-    );
-  } else if (owner.rows.some((row: any) => row.id === DEFAULT_OWNER.id)) {
-    await pool.query(
-      `UPDATE owner_profile
-       SET name = $1, phone = $2, password = COALESCE(NULLIF(password, ''), $3)
-       WHERE id = $4`,
-      [DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password, DEFAULT_OWNER.id]
-    );
-  }
+  await pool.query(
+    `INSERT INTO owner_profile (id, name, phone, password)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       phone = EXCLUDED.phone,
+       password = COALESCE(NULLIF(owner_profile.password, ''), EXCLUDED.password)`,
+    [DEFAULT_OWNER.id, DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password]
+  );
 
   await pool.query(`CREATE TABLE IF NOT EXISTS customer_rates (
     id TEXT PRIMARY KEY,
@@ -313,17 +307,12 @@ export async function getSystemState() {
 
 export async function updateSystemState(key: string, value: unknown) {
   await safeInitDb();
-  const updateResult = await pool.query(
-    "UPDATE system_state SET value = $1 WHERE key = $2",
-    [String(value), key]
+  await pool.query(
+    `INSERT INTO system_state (key, value)
+     VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [key, String(value)]
   );
-
-  if (updateResult.rowCount === 0) {
-    await pool.query(
-      "INSERT INTO system_state (key, value) VALUES ($1, $2)",
-      [key, String(value)]
-    );
-  }
 
   return { success: true };
 }
