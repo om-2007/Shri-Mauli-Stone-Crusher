@@ -176,6 +176,14 @@ export async function initDb() {
        password = COALESCE(NULLIF(owner_profile.password, ''), EXCLUDED.password)`,
     [DEFAULT_OWNER.id, DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password]
   );
+  await pool.query(
+    `UPDATE owner_profile
+     SET name = $1,
+         phone = $2,
+         password = COALESCE(NULLIF(password, ''), $3)
+     WHERE id <> $4`,
+    [DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password, DEFAULT_OWNER.id]
+  );
 
   await pool.query(`CREATE TABLE IF NOT EXISTS customer_rates (
     id TEXT PRIMARY KEY,
@@ -232,7 +240,7 @@ export async function getAppData() {
   const assistants = await pool.query("SELECT * FROM assistants");
   const customerRates = await pool.query("SELECT * FROM customer_rates");
   const khataClients = await pool.query("SELECT * FROM khata_clients");
-  const ownerProfile = await pool.query("SELECT * FROM owner_profile");
+  const ownerProfile = await pool.query("SELECT * FROM owner_profile WHERE id = $1", [DEFAULT_OWNER.id]);
   const systemState = await pool.query("SELECT * FROM system_state");
   const isDayStarted = systemState.rows.find((row: any) => row.key === 'isDayStarted')?.value === 'true';
 
