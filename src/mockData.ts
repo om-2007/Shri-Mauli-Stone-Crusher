@@ -21,7 +21,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     id: 'c1',
     date: '2024-03-20',
     vehicleNumber: 'MH-12-AB-1234',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     customerType: 'REGULAR',
     material: 'Crushed Stone (20mm)',
     brass: 2.5,
@@ -51,7 +51,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     id: 'c3',
     date: '2024-03-21',
     vehicleNumber: 'MH-12-PQ-9999',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     customerType: 'REGULAR',
     material: 'Crushed Stone (10mm)',
     brass: 1.5,
@@ -105,26 +105,26 @@ export const MOCK_SALARIES: SalaryEntry[] = [
 export const MOCK_CUSTOMER_RATES: CustomerRate[] = [
   {
     id: 'r1',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     material: 'Crushed Stone (20mm)',
     rate: 6000,
   },
   {
     id: 'r2',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     material: 'Crushed Stone (10mm)',
     rate: 6000,
   },
   {
     id: 'r3',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     material: 'Dust',
     rate: 3000,
   }
 ];
 
 export const MOCK_KHATA_CLIENTS: string[] = [
-  'Shree Builders',
+  'Mauli Builders',
   'XYZ',
   'Om Stone Works'
 ];
@@ -133,7 +133,7 @@ export const MOCK_KHATA_PAYMENTS: KhataPayment[] = [
   {
     id: 'kp1',
     date: '2024-03-25',
-    customerName: 'Shree Builders',
+    customerName: 'Mauli Builders',
     amount: 10000,
     paymentMethod: 'UPI',
     description: 'Part payment for March'

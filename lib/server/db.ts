@@ -36,6 +36,12 @@ export const pool = new Proxy({} as pg.Pool, {
 }) as pg.Pool;
 
 const CRYPTO_SECRET = process.env.CRYPTO_SECRET || 'fallback_secret_for_dev_only';
+const DEFAULT_OWNER = {
+  id: 'owner-1',
+  name: 'Nilesh Karande',
+  phone: '9370763003',
+  password: '123456',
+};
 
 export function encrypt(text: unknown) {
   if (text === undefined || text === null) return '';
@@ -166,7 +172,14 @@ export async function initDb() {
   if (owner.rows.length === 0) {
     await pool.query(
       "INSERT INTO owner_profile (id, name, phone, password) VALUES ($1, $2, $3, $4)",
-      ['owner-1', 'Nilesh Karande', '9370763003', '123456']
+      [DEFAULT_OWNER.id, DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password]
+    );
+  } else if (owner.rows.some((row: any) => row.id === DEFAULT_OWNER.id)) {
+    await pool.query(
+      `UPDATE owner_profile
+       SET name = $1, phone = $2, password = COALESCE(NULLIF(password, ''), $3)
+       WHERE id = $4`,
+      [DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password, DEFAULT_OWNER.id]
     );
   }
 
