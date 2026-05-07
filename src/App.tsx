@@ -44,6 +44,7 @@ export default function App() {
   const [ownerProfile, setOwnerProfile] = useState<any>(null);
   const [isDayStarted, setIsDayStarted] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [setupError, setSetupError] = useState('');
 
   const parseJsonResponse = async (res: Response, label: string) => {
     const contentType = res.headers.get('content-type') || '';
@@ -72,7 +73,8 @@ export default function App() {
     setAssistants(data.assistants || []);
     setCustomerRates(data.customerRates || []);
     setKhataClients(data.khataClients || []);
-    setOwnerProfile(data.ownerProfile || null);
+    setOwnerProfile(data.ownerProfile || DEFAULT_OWNER);
+    setSetupError('');
     setNotificationSettings(data.notificationSettings || {
       enableKhataReminders: true,
       enableMaintenanceAlerts: true,
@@ -114,6 +116,12 @@ export default function App() {
       .then(() => setLoading(false))
       .catch(err => {
         console.error('Failed to fetch data', err);
+        setOwnerProfile(DEFAULT_OWNER);
+        setSetupError(
+          err instanceof Error && err.message.includes('DATABASE_URL')
+            ? 'Database is not connected. Add DATABASE_URL in Vercel or .env.local, then redeploy.'
+            : 'Database connection failed. Check your CockroachDB connection string and redeploy.'
+        );
         setLoading(false);
       });
   }, []);
@@ -482,10 +490,11 @@ const syncKhataPayment = async (data: any) => {
 
   const handleLogin = (name: string, role: UserRole, password?: string): boolean => {
     if (role === 'OWNER') {
-      const storedPassword = ownerProfile?.password || '123456';
+      const profile = ownerProfile || DEFAULT_OWNER;
+      const storedPassword = profile.password || '123456';
       // Owner login - checking against dynamic profile if available
-      if (name === (ownerProfile?.name || 'Nilesh Karande') && password === storedPassword) {
-        setCurrentUser({ ...ownerProfile, role: 'OWNER' });
+      if (name.toLowerCase() === profile.name.toLowerCase() && password === storedPassword) {
+        setCurrentUser({ ...profile, role: 'OWNER' });
         setActiveTab('dashboard');
         return true;
       }
@@ -537,7 +546,14 @@ const syncKhataPayment = async (data: any) => {
   }
 
   if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} assistants={assistants} ownerProfile={ownerProfile} />;
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        assistants={assistants}
+        ownerProfile={ownerProfile}
+        setupError={setupError}
+      />
+    );
   }
 
   return (

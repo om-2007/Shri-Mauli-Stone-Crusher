@@ -8,9 +8,10 @@ interface LoginPageProps {
   onLogin: (name: string, role: UserRole, password?: string) => boolean;
   assistants: any[];
   ownerProfile: any;
+  setupError?: string;
 }
 
-export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPageProps) {
+export default function LoginPage({ onLogin, assistants, ownerProfile, setupError }: LoginPageProps) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -71,6 +72,12 @@ export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPa
       >
         <div className="bg-white py-8 px-4 shadow-xl shadow-slate-200/50 sm:rounded-3xl sm:px-10 border border-slate-100">
           <form className="space-y-6" onSubmit={handleSubmit}>
+            {setupError && (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {setupError}
+              </div>
+            )}
+
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-slate-700">
                 Full Name
