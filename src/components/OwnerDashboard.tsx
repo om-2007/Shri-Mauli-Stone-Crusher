@@ -1626,7 +1626,7 @@ export default function OwnerDashboard({
             <input 
               type="text" required value={assistantPhone} onChange={e => setAssistantPhone(e.target.value)}
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
-              placeholder="e.g. 9876543210"
+              placeholder="e.g. 9370763003"
             />
           </div>
           <div className="space-y-1.5">
@@ -1695,7 +1695,7 @@ export default function OwnerDashboard({
             <input 
               type="text" required value={khataCustName} onChange={e => setKhataCustName(e.target.value)}
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
-              placeholder="e.g. Shree Builders"
+              placeholder="e.g. Mauli Builders"
             />
           </div>
           <div className="space-y-1.5">

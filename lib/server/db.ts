@@ -166,7 +166,7 @@ export async function initDb() {
   if (owner.rows.length === 0) {
     await pool.query(
       "INSERT INTO owner_profile (id, name, phone, password) VALUES ($1, $2, $3, $4)",
-      ['owner-1', 'ADMIN OWNER', '0000000000', '123456']
+      ['owner-1', 'Nilesh Karande', '9370763003', '123456']
     );
   }
 

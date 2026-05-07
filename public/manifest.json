@@ -1,6 +1,6 @@
 {
-  "short_name": "Shree Stone",
-  "name": "Shree Stone Crusher Management",
+  "short_name": "Shri Mauli",
+  "name": "Shri Mauli Stone Crusher Management",
   "description": "Stone crusher management system for tracking customers, payments, and maintenance",
   "start_url": ".",
   "display": "standalone",
@@ -14,13 +14,13 @@
   "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/Shree Stone Crusher 192x192.png",
+      "src": "/shri-mauli-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/Shree Stone Crusher 512x512.png",
+      "src": "/shri-mauli-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
@@ -28,14 +28,14 @@
   ],
   "screenshots": [
     {
-      "src": "/Shree Stone Crusher 512x512.png",
+      "src": "/shri-mauli-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "form_factor": "wide",
       "label": "Dashboard view"
     },
     {
-      "src": "/Shree Stone Crusher 512x512.png",
+      "src": "/shri-mauli-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "label": "Mobile view"

@@ -2,8 +2,8 @@ import { CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerRate, Khata
 
 export const MOCK_OWNER: User = {
   id: 'o1',
-  name: 'Kiran Chavan',
-  phone: '9876543210',
+  name: 'Nilesh Karande',
+  phone: '9370763003',
   role: 'OWNER',
 };
 
@@ -29,7 +29,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     amount: 15000,
     paidAmount: 15000,
     status: 'PAID',
-    addedBy: 'Kiran Chavan',
+    addedBy: 'Nilesh Karande',
     addedById: 'o1',
   },
   {
@@ -59,7 +59,7 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     amount: 9000,
     paidAmount: 9000,
     status: 'PAID',
-    addedBy: 'Kiran Chavan',
+    addedBy: 'Nilesh Karande',
     addedById: 'o1',
   }
 ];

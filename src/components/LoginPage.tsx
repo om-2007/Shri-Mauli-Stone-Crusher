@@ -21,7 +21,7 @@ export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPa
     setError('');
 
     // Owner check (checking against profile from DB)
-    const ownerName = ownerProfile?.name || 'Kiran Chavan';
+    const ownerName = ownerProfile?.name || 'Nilesh Karande';
     if (name.toLowerCase() === ownerName.toLowerCase()) {
       const success = onLogin(name, 'OWNER', password);
       if (success) return;
@@ -42,16 +42,16 @@ export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPa
         className="sm:mx-auto sm:w-full sm:max-w-md"
       >
         <div className="flex justify-center">
-          <div className="bg-[#F1F5F9] p-4 rounded-[2.5rem] shadow-2xl border-4 border-white relative overflow-hidden group">
+          <div className="bg-[#F1F5F9] p-3 rounded-[2.5rem] shadow-2xl border-4 border-white relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-[#F59E0B]/20 to-transparent"></div>
-            <div className="bg-[#F59E0B] p-4 rounded-3xl shadow-lg border-2 border-[#EF4444] relative z-10 transform group-hover:rotate-12 transition-transform duration-500">
-              <LogoIcon className="h-12 w-12 text-[#EF4444]" />
+            <div className="bg-[#F59E0B] p-1.5 rounded-3xl shadow-lg border-2 border-[#EF4444] relative z-10 transform group-hover:rotate-6 transition-transform duration-500">
+              <LogoIcon className="h-20 w-20 rounded-2xl object-cover" />
             </div>
           </div>
         </div>
         <div className="mt-8 text-center">
-          <h2 className="text-5xl font-black text-[#EF4444] tracking-tighter uppercase leading-none">
-            SHREE
+          <h2 className="text-4xl font-black text-[#EF4444] tracking-tighter uppercase leading-none">
+            SHRI MAULI
           </h2>
           <div className="flex items-center justify-center space-x-2 mt-1">
             <div className="h-[2px] w-8 bg-[#F59E0B]"></div>
@@ -154,7 +154,7 @@ export default function LoginPage({ onLogin, assistants, ownerProfile }: LoginPa
         </div>
         
         <p className="mt-8 text-center text-xs text-slate-400">
-          © 2026 Shree Stone Crusher. All rights reserved.
+          © 2026 Shri Mauli Stone Crusher. All rights reserved.
         </p>
       </motion.div>
     </div>

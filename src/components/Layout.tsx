@@ -52,11 +52,11 @@ export default function Layout({
           <div className="flex items-center flex-shrink-0 px-6 space-x-3 h-20 border-b border-white/10 mb-4 bg-gradient-to-b from-white/5 to-transparent">
             <div className="relative group">
               <div className="bg-[#F59E0B] p-1.5 rounded-xl border-2 border-[#EF4444] shadow-lg transform group-hover:rotate-6 transition-transform">
-                <LogoIcon className="h-7 w-7 text-[#EF4444]" />
+                <LogoIcon className="h-8 w-8 rounded-lg object-cover" />
               </div>
             </div>
             <div className="flex flex-col">
-              <span className="text-xl font-black tracking-tighter text-[#F59E0B] leading-none">SHREE</span>
+              <span className="text-lg font-black tracking-tighter text-[#F59E0B] leading-none">SHRI MAULI</span>
               <span className="text-[10px] font-bold text-white/40 uppercase tracking-[0.3em] mt-1 italic">Stone Crusher</span>
             </div>
           </div>
@@ -244,10 +244,10 @@ export default function Layout({
               <div className="flex items-center justify-between h-20 px-6 border-b border-slate-100">
                 <div className="flex items-center space-x-3">
                   <div className="bg-[#F59E0B] p-1.5 rounded-xl border-2 border-[#EF4444] shadow-md">
-                    <LogoIcon className="h-6 w-6 text-[#EF4444]" />
+                    <LogoIcon className="h-7 w-7 rounded-lg object-cover" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-lg font-black text-[#EF4444] leading-none uppercase">SHREE</span>
+                    <span className="text-base font-black text-[#EF4444] leading-none uppercase">SHRI MAULI</span>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Stone Crusher</span>
                   </div>
                 </div>

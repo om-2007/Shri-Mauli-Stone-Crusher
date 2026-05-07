@@ -1,9 +1,10 @@
-const CACHE_NAME = 'shree-stone-v4';
+const CACHE_NAME = 'shri-mauli-stone-v1';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
-  '/Shree Stone Crusher 192x192.png',
-  '/Shree Stone Crusher 512x512.png'
+  '/shri-mauli-icon-192.png',
+  '/shri-mauli-icon-512.png',
+  '/shri-mauli-logo.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -67,8 +68,8 @@ self.addEventListener('push', (event) => {
   
   const options = {
     body: data.body,
-    icon: '/Shree Stone Crusher 192x192.png',
-    badge: '/Shree Stone Crusher 192x192.png',
+    icon: '/shri-mauli-icon-192.png',
+    badge: '/shri-mauli-icon-192.png',
     vibrate: [100, 50, 100],
     data: { url: data.url || '/' }
   };

@@ -7,9 +7,9 @@ import LoginPage from './components/LoginPage';
 
 const DEFAULT_OWNER: User = {
   id: 'owner-1',
-  name: 'ADMIN OWNER',
+  name: 'Nilesh Karande',
   role: 'OWNER',
-  phone: '0000000000'
+  phone: '9370763003'
 };
 import Layout from './components/Layout';
 import OwnerDashboard from './components/OwnerDashboard';
@@ -484,7 +484,7 @@ const syncKhataPayment = async (data: any) => {
     if (role === 'OWNER') {
       const storedPassword = ownerProfile?.password || '123456';
       // Owner login - checking against dynamic profile if available
-      if (name === (ownerProfile?.name || 'Kiran Chavan') && password === storedPassword) {
+      if (name === (ownerProfile?.name || 'Nilesh Karande') && password === storedPassword) {
         setCurrentUser({ ...ownerProfile, role: 'OWNER' });
         setActiveTab('dashboard');
         return true;

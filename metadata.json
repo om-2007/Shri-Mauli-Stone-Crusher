@@ -1,6 +1,6 @@
 {
-  "name": "Shree Stone Crusher",
-  "description": "Professional billing and inventory management system for Shree Stone Crusher with role-based access control.",
+  "name": "Shri Mauli Stone Crusher",
+  "description": "Professional billing and inventory management system for Shri Mauli Stone Crusher with role-based access control.",
   "requestFramePermissions": [],
   "majorCapabilities": ["Billing", "Maintenance Tracking", "Worker Management", "Analytics"]
 }
