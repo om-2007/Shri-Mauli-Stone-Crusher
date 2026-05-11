@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { User, AppState, UserRole, CustomerRate } from './types';
+import { User, AppState, UserRole, CustomerRate, KhataClient } from './types';
 // Removed mock imports to lean purely on database
 import LoginPage from './components/LoginPage';
 
@@ -32,6 +32,12 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('activeTab', activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (currentUser?.role === 'ASSISTANT' && activeTab === 'salaries') {
+      setActiveTab('customers');
+    }
+  }, [currentUser?.role, activeTab]);
   
   // App state
   const [customers, setCustomers] = useState<any[]>([]);
@@ -39,7 +45,7 @@ export default function App() {
   const [salaries, setSalaries] = useState<any[]>([]);
   const [assistants, setAssistants] = useState<any[]>([]);
   const [customerRates, setCustomerRates] = useState<any[]>([]);
-  const [khataClients, setKhataClients] = useState<any[]>([]);
+  const [khataClients, setKhataClients] = useState<KhataClient[]>([]);
   const [khataPayments, setKhataPayments] = useState<any[]>([]);
   const [ownerProfile, setOwnerProfile] = useState<any>(null);
   const [isDayStarted, setIsDayStarted] = useState(false);
@@ -174,7 +180,7 @@ export default function App() {
         if (collection === 'assistants') setAssistants(prev => prev.filter(a => a.id !== id));
         if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
-        if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c !== id));
+        if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c.id !== id));
         await refreshData(`Refresh after deleting ${collection}`);
       }
     } catch (e) {
@@ -364,20 +370,32 @@ const syncKhataPayment = async (data: any) => {
     }
   };
 
-  const syncKhataClient = async (clientName: string) => {
-    if (!clientName) return;
+  const syncKhataClient = async (clientData: string | Partial<KhataClient>) => {
+    const payload =
+      typeof clientData === 'string'
+        ? { name: clientData.trim(), applyGst: false }
+        : {
+            id: clientData.id,
+            name: clientData.name?.trim() || '',
+            applyGst: Boolean(clientData.applyGst),
+          };
+
+    if (!payload.name) return;
     try {
       const res = await fetch('/api/khata-clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: clientName })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) return;
       const stored = await res.json();
-      // Add only if not exists
+      // Update or add
       setKhataClients(prev => {
-        if (prev.includes(stored.name)) return prev;
-        return [...prev, stored.name];
+        const idx = prev.findIndex(client => client.id === stored.id || client.name === stored.name);
+        if (idx >= 0) {
+          return prev.map((client, index) => (index === idx ? stored : client));
+        }
+        return [...prev, stored];
       });
       await refreshData('Khata client refresh');
     } catch (e) {
@@ -400,7 +418,7 @@ const syncKhataPayment = async (data: any) => {
     const today = new Date();
     
     // Check Khata Clients for 15-day rule
-    khataClients.forEach(client => {
+    khataClients.forEach(({ name: client }) => {
       const clientTx = customers.filter(c => c.customerName === client && c.customerType === 'REGULAR');
       if (clientTx.length === 0) return;
 
@@ -556,6 +574,10 @@ const syncKhataPayment = async (data: any) => {
     );
   }
 
+  const shouldUseOwnerDashboard =
+    currentUser.role === 'OWNER' ||
+    (currentUser.role === 'ASSISTANT' && activeTab !== 'dashboard' && activeTab !== 'salaries');
+
   return (
     <Layout 
       user={currentUser} 
@@ -565,7 +587,7 @@ const syncKhataPayment = async (data: any) => {
       notifications={notifications}
       markNotificationAsRead={markNotificationAsRead}
     >
-      {currentUser.role === 'OWNER' ? (
+      {shouldUseOwnerDashboard ? (
         <OwnerDashboard 
           state={appState} 
           setIsDayStarted={syncDayStatus}
@@ -585,6 +607,7 @@ const syncKhataPayment = async (data: any) => {
         <AssistantDashboard 
           state={appState} 
           activeTab={activeTab}
+          setIsDayStarted={syncDayStatus}
           setCustomers={syncCustomer as any} 
           setMaintenance={syncMaintenance as any}
           deleteRecord={deleteRecord}

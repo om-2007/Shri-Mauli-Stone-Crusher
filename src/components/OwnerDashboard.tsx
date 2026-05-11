@@ -10,7 +10,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend
 } from 'recharts';
-import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings } from '../types';
+import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient } from '../types';
 import { formatCurrency, formatDate, cn } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import SettingsContent from './SettingsContent';
@@ -26,7 +26,7 @@ interface OwnerDashboardProps {
   setSalaries: React.Dispatch<React.SetStateAction<SalaryEntry[]>>;
   setAssistants: React.Dispatch<React.SetStateAction<User[]>>;
   setCustomerRates: React.Dispatch<React.SetStateAction<CustomerRate[]>>;
-  setKhataClients: React.Dispatch<React.SetStateAction<string[]>>;
+  setKhataClients: React.Dispatch<React.SetStateAction<KhataClient[]>>;
   setKhataPayments: React.Dispatch<React.SetStateAction<KhataPayment[]>>;
   setNotificationSettings: React.Dispatch<React.SetStateAction<NotificationSettings>>;
   deleteRecord: (collection: string, id: string) => Promise<void>;
@@ -48,6 +48,7 @@ export default function OwnerDashboard({
   deleteRecord,
   syncProfile
 }: OwnerDashboardProps) {
+  const isOwner = state.currentUser?.role === 'OWNER';
   const [searchTerm, setSearchTerm] = useState('');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<'ALL' | CustomerType>('ALL');
   const [isMaintenanceModalOpen, setIsMaintenanceModalOpen] = useState(false);
@@ -89,6 +90,8 @@ export default function OwnerDashboard({
   const [khataMaterial, setKhataMaterial] = useState('');
   const [khataRate, setKhataRate] = useState('');
   const [newKhataClientName, setNewKhataClientName] = useState('');
+  const [newKhataClientApplyGst, setNewKhataClientApplyGst] = useState(false);
+  const [editingKhataClientId, setEditingKhataClientId] = useState<string | null>(null);
   const [khataDetailTab, setKhataDetailTab] = useState<'RATES' | 'PAYMENTS'>('RATES');
   
   // Khata Payment Form States
@@ -147,14 +150,47 @@ export default function OwnerDashboard({
     setIsKhataModalOpen(true);
   };
 
+  const selectedKhataClientData = useMemo(
+    () => state.khataClients.find(client => client.name === selectedKhataClient) || null,
+    [state.khataClients, selectedKhataClient]
+  );
+
+  const shouldApplyGst = (customerName: string) =>
+    state.khataClients.some(
+      client =>
+        client.name.trim().toUpperCase() === customerName.trim().toUpperCase() &&
+        client.applyGst
+    );
+
+  const calculateRegularAmount = (customerName: string, materialName: string, brassValue: number) => {
+    const rateRec = state.customerRates.find(
+      r =>
+        r.customerName.trim().toUpperCase() === customerName.trim().toUpperCase() &&
+        r.material.trim().toUpperCase() === materialName.trim().toUpperCase()
+    );
+    const baseAmount = rateRec && rateRec.rate ? brassValue * rateRec.rate : 0;
+    return shouldApplyGst(customerName) ? baseAmount * 1.05 : baseAmount;
+  };
+
    const handleAddKhataClient = async (e: React.FormEvent) => {
      e.preventDefault();
      const trimmed = newKhataClientName.trim();
-     if (trimmed && !(state.khataClients || []).includes(trimmed)) {
-       await (setKhataClients as any)(trimmed);
-       setNewKhataClientName('');
-       setIsKhataClientModalOpen(false);
-     }
+     const duplicate = (state.khataClients || []).some(
+       client =>
+         client.name.trim().toUpperCase() === trimmed.toUpperCase() &&
+         client.id !== editingKhataClientId
+     );
+     if (!trimmed || duplicate) return;
+
+     await (setKhataClients as any)({
+       id: editingKhataClientId || undefined,
+       name: trimmed,
+       applyGst: newKhataClientApplyGst,
+     });
+     setNewKhataClientName('');
+     setNewKhataClientApplyGst(false);
+     setEditingKhataClientId(null);
+     setIsKhataClientModalOpen(false);
    };
 
   const handleAddKhataPayment = (e: React.FormEvent) => {
@@ -182,11 +218,18 @@ export default function OwnerDashboard({
     deleteRecord('khataPayments', id);
   };
 
-  const handleRemoveKhataClient = (clientName: string) => {
-    deleteRecord('khataClients', clientName);
+  const handleEditKhataClient = (client: KhataClient) => {
+    setEditingKhataClientId(client.id);
+    setNewKhataClientName(client.name);
+    setNewKhataClientApplyGst(client.applyGst);
+    setIsKhataClientModalOpen(true);
+  };
+
+  const handleRemoveKhataClient = (client: KhataClient) => {
+    deleteRecord('khata-clients', client.id);
     // Locally also filter child rates for UI responsiveness if not handled by overall state fetch
-    setCustomerRates(prev => prev.filter(r => r.customerName !== clientName));
-    if (selectedKhataClient === clientName) setSelectedKhataClient(null);
+    setCustomerRates(prev => prev.filter(r => r.customerName !== client.name));
+    if (selectedKhataClient === client.name) setSelectedKhataClient(null);
   };
 
   const handleRemoveKhata = (id: string) => {
@@ -219,7 +262,7 @@ export default function OwnerDashboard({
   };
 
   const uniqueKhataCustomers = useMemo(() => 
-    Array.from(new Set([...state.khataClients])),
+    Array.from(new Set(state.khataClients.map(client => client.name))),
     [state.khataClients]
   );
 
@@ -236,7 +279,7 @@ export default function OwnerDashboard({
     if (!name) return;
     
     // Check if in khata clients
-    const isKhata = state.khataClients.some(k => (k || '').trim().toUpperCase() === name);
+    const isKhata = state.khataClients.some(k => (k.name || '').trim().toUpperCase() === name);
     setCustType(isKhata ? 'REGULAR' : 'OTHER');
   };
 
@@ -259,7 +302,9 @@ export default function OwnerDashboard({
     e.preventDefault();
     const rateNum = custType === 'REGULAR' ? 0 : (isNaN(parseFloat(rate)) ? 0 : parseFloat(rate));
     const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
-    const totalAmount = brassNum * rateNum;
+    const totalAmount = custType === 'REGULAR'
+      ? calculateRegularAmount(custName, material, brassNum)
+      : brassNum * rateNum;
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
@@ -287,7 +332,7 @@ export default function OwnerDashboard({
       // If Khata Client (REGULAR), also save to DB
       if (custType === 'REGULAR' && (custName || '').trim()) {
         // Add to Khata clients
-        (setKhataClients as any)((custName || '').trim());
+        (setKhataClients as any)({ name: (custName || '').trim(), applyGst: false });
         // Always create rate entry for the material (rate can be 0)
         if ((material || '').trim()) {
           (setCustomerRates as any)({ customerName: custName, material: material, rate: parseFloat(rate) || 0 });
@@ -406,14 +451,7 @@ export default function OwnerDashboard({
   const stats = useMemo(() => {
     const getAmount = (c: any) => {
       if (c.customerType === 'REGULAR') {
-        // Get rate from customerRates
-        const rateRec = state.customerRates.find(r => 
-          r.customerName === c.customerName && r.material === c.material
-        );
-        if (rateRec && rateRec.rate) {
-          return c.brass * rateRec.rate;
-        }
-        return 0;
+        return calculateRegularAmount(c.customerName, c.material, c.brass);
       }
       return c.amount;
     };
@@ -448,12 +486,7 @@ export default function OwnerDashboard({
       if (dailyMap[date]) {
         let amt = c.amount;
         if (c.customerType === 'REGULAR') {
-          const rateRec = state.customerRates.find(r => 
-            r.customerName === c.customerName && r.material === c.material
-          );
-          if (rateRec && rateRec.rate) {
-            amt = c.brass * rateRec.rate;
-          }
+          amt = calculateRegularAmount(c.customerName, c.material, c.brass);
         }
         dailyMap[date].income += amt;
       }
@@ -686,8 +719,7 @@ export default function OwnerDashboard({
                 <td className="px-6 py-4 text-xs font-bold text-text-main">
                   {customer.customerType === 'REGULAR' ? (
                     (() => {
-                      const rateRec = state.customerRates.find(r => r.customerName === customer.customerName && r.material === customer.material);
-                      return formatCurrency(rateRec && rateRec.rate ? customer.brass * rateRec.rate : 0);
+                      return formatCurrency(calculateRegularAmount(customer.customerName, customer.material, customer.brass));
                     })()
                   ) : formatCurrency(customer.amount)}
                 </td>
@@ -832,8 +864,8 @@ export default function OwnerDashboard({
   );
 
   const renderAssistants = () => (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-text-main">Assistant Management</h2>
           <p className="text-sm text-text-muted">Control access permissions and monitor staff activities</p>
@@ -849,17 +881,27 @@ export default function OwnerDashboard({
               className="pl-10 pr-4 py-2 bg-white border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full sm:w-56"
             />
           </div>
-          <button 
-            onClick={() => setIsAssistantModalOpen(true)}
-            className="flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-dark transition-all whitespace-nowrap"
-          >
-            <UserPlus className="h-4 w-4 mr-2" /> ADD ASSISTANT
-          </button>
+            {isOwner && (
+              <button 
+                onClick={() => setIsAssistantModalOpen(true)}
+                className="flex items-center justify-center px-4 py-2 bg-primary text-white rounded-lg text-xs font-bold hover:bg-primary-dark transition-all whitespace-nowrap"
+              >
+                <UserPlus className="h-4 w-4 mr-2" /> ADD ASSISTANT
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredAssistants.map((assistant) => {
+        {!isOwner && (
+          <div className="bg-bg-surface border border-border-subtle rounded-xl px-4 py-3">
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">
+              Assistant access can view staff activity but cannot add or remove assistants.
+            </p>
+          </div>
+        )}
+  
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredAssistants.map((assistant) => {
           const billingCount = state.customers.filter(c => c.addedById === assistant.id).length;
           const maintenanceCount = state.maintenance.filter(m => m.addedById === assistant.id).length;
           
@@ -867,17 +909,19 @@ export default function OwnerDashboard({
             <motion.div 
               key={assistant.id}
               whileHover={{ y: -2 }}
-              className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm relative overflow-hidden group"
-            >
-              <div className="absolute top-0 right-0 p-4 flex space-x-2">
-                <button 
-                  onClick={() => handleRemoveAssistant(assistant.id)}
-                  className="text-text-muted hover:text-danger transition-colors p-1"
-                  title="Remove Assistant"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
+                className="bg-white p-6 rounded-xl border border-border-subtle shadow-sm relative overflow-hidden group"
+              >
+                {isOwner && (
+                  <div className="absolute top-0 right-0 p-4 flex space-x-2">
+                    <button 
+                      onClick={() => handleRemoveAssistant(assistant.id)}
+                      className="text-text-muted hover:text-danger transition-colors p-1"
+                      title="Remove Assistant"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
               <div className="flex items-center space-x-4">
                 <div className="h-10 w-10 bg-bg-surface border border-border-subtle rounded-full flex items-center justify-center text-text-main font-bold text-xs uppercase">
                   {(assistant.name || '').split(' ').map(n => n[0]).join('')}
@@ -921,10 +965,9 @@ export default function OwnerDashboard({
   );
 
    const renderKhata = () => {
-     const clients = (state.khataClients || []).filter(c => 
-       c != null && 
-       typeof c === 'string' && 
-       c.toLowerCase().includes((searchTerm || '').toLowerCase())
+     const clients = (state.khataClients || []).filter(client => 
+       client?.name &&
+       client.name.toLowerCase().includes((searchTerm || '').toLowerCase())
      );
 
     const clientRates = state.customerRates.filter(r => r.customerName === selectedKhataClient);
@@ -940,13 +983,9 @@ export default function OwnerDashboard({
     );
     
     const getAmount = (c: any) => {
-      const rateRec = state.customerRates.find(r => 
-        r.customerName === c.customerName && r.material === c.material
-      );
-      if (rateRec && rateRec.rate) {
-        return c.brass * rateRec.rate;
-      }
-      return c.amount;
+      return c.customerType === 'REGULAR'
+        ? calculateRegularAmount(c.customerName, c.material, c.brass)
+        : c.amount;
     };
     
     const clientTotalValuation = clientTransactions.reduce((acc, curr) => acc + getAmount(curr), 0);
@@ -992,30 +1031,45 @@ export default function OwnerDashboard({
             </div>
             <div className="divide-y divide-border-subtle max-h-[500px] overflow-y-auto">
               {clients.map(client => (
-                <div key={client} className="flex items-center justify-between px-6 py-4 transition-all hover:bg-bg-surface">
+                <div key={client.id} className="flex items-center justify-between px-6 py-4 transition-all hover:bg-bg-surface">
                   <button
-                    onClick={() => setSelectedKhataClient(client)}
+                    onClick={() => setSelectedKhataClient(client.name)}
                     className={cn(
                       "flex items-center flex-1",
-                      selectedKhataClient === client ? "border-l-4 border-primary bg-primary/5 -ml-px pl-4" : ""
+                      selectedKhataClient === client.name ? "border-l-4 border-primary bg-primary/5 -ml-px pl-4" : ""
                     )}
                   >
                     <div className={cn(
                       "h-8 w-8 rounded-lg flex items-center justify-center mr-3 font-bold text-xs shadow-sm",
-                      selectedKhataClient === client ? "bg-primary text-white" : "bg-bg-surface text-text-muted"
+                      selectedKhataClient === client.name ? "bg-primary text-white" : "bg-bg-surface text-text-muted"
                     )}>
-                      {client[0]}
+                      {client.name[0]}
                     </div>
                     <span className={cn(
                       "text-sm font-bold tracking-tight uppercase",
-                      selectedKhataClient === client ? "text-primary" : "text-text-main"
-                    )}>{client}</span>
+                      selectedKhataClient === client.name ? "text-primary" : "text-text-main"
+                    )}>{client.name}</span>
+                  </button>
+                  {client.applyGst && (
+                    <span className="mr-2 px-2 py-0.5 bg-success/10 text-success rounded-full text-[9px] font-bold uppercase tracking-widest">
+                      GST
+                    </span>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditKhataClient(client);
+                    }}
+                    className="p-2 text-text-muted hover:text-primary transition-colors"
+                    title="Edit Client"
+                  >
+                    <Settings className="h-4 w-4" />
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete client "${client}"?`)) {
-                        deleteRecord('khata-clients', client);
+                      if (confirm(`Delete client "${client.name}"?`)) {
+                        handleRemoveKhataClient(client);
                       }
                     }}
                     className="p-2 text-text-muted hover:text-danger transition-colors"
@@ -1040,6 +1094,11 @@ export default function OwnerDashboard({
                   <div>
                     <h3 className="text-lg font-black text-text-main uppercase tracking-tight">{selectedKhataClient}</h3>
                     <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mt-1">Material Rate Master</p>
+                    {selectedKhataClientData && (
+                      <p className="text-[10px] font-bold uppercase tracking-widest mt-2 text-success">
+                        GST: {selectedKhataClientData.applyGst ? 'Applied at 5%' : 'Not Applied'}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <button 
@@ -1058,7 +1117,7 @@ export default function OwnerDashboard({
                       <Plus className="h-3 w-3 mr-1.5" /> ADD MATERIAL
                     </button>
                     <button 
-                      onClick={() => handleRemoveKhataClient(selectedKhataClient)}
+                      onClick={() => selectedKhataClientData && handleRemoveKhataClient(selectedKhataClientData)}
                       className="p-2 text-danger hover:bg-danger/5 rounded-lg border border-danger/20 transition-all shadow-sm flex items-center justify-center"
                       title="Remove Client"
                     >
@@ -1473,7 +1532,7 @@ export default function OwnerDashboard({
                 setCustName(e.target.value);
                 // Check if Khata client
                 const name = (e.target.value || '').trim().toUpperCase();
-                const isKhata = state.khataClients.some(k => (k || '').trim().toUpperCase() === name);
+                const isKhata = state.khataClients.some(k => (k.name || '').trim().toUpperCase() === name);
                 if (isKhata) setCustType('REGULAR');
                 else if (name) setCustType('OTHER');
               }}
@@ -1535,7 +1594,11 @@ export default function OwnerDashboard({
             <div className="flex justify-between items-center">
               <span className="text-[10px] font-bold text-text-muted uppercase">Total Valuation</span>
               <span className="text-sm font-black text-text-main">
-                ₹{((parseFloat(brass) || 0) * (parseFloat(rate) || 0)).toLocaleString()}
+                ₹{(
+                  custType === 'REGULAR'
+                    ? calculateRegularAmount(custName, material, parseFloat(brass) || 0)
+                    : (parseFloat(brass) || 0) * (parseFloat(rate) || 0)
+                ).toLocaleString()}
               </span>
             </div>
             {custType !== 'REGULAR' && (
@@ -1655,8 +1718,13 @@ export default function OwnerDashboard({
 
       <Modal 
         isOpen={isKhataClientModalOpen} 
-        onClose={() => setIsKhataClientModalOpen(false)}
-        title="Register New Khata Client"
+        onClose={() => {
+          setIsKhataClientModalOpen(false);
+          setEditingKhataClientId(null);
+          setNewKhataClientName('');
+          setNewKhataClientApplyGst(false);
+        }}
+        title={editingKhataClientId ? "Edit Khata Client" : "Register New Khata Client"}
       >
         <form onSubmit={handleAddKhataClient} className="space-y-4">
           <div className="space-y-1.5">
@@ -1664,18 +1732,43 @@ export default function OwnerDashboard({
             <div className="relative">
               <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
               <input 
-                type="text" required value={newKhataClientName} onChange={e => setNewKhataClientName(e.target.value)}
+                type="text"
+                required
+                value={newKhataClientName}
+                onChange={e => setNewKhataClientName(e.target.value)}
+                readOnly={Boolean(editingKhataClientId)}
                 className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
                 placeholder="Business Name or Owner Name"
               />
             </div>
+            {editingKhataClientId && (
+              <p className="text-[10px] font-bold text-text-muted uppercase tracking-tight">
+                Client name is locked during edit. You can update the GST setting here.
+              </p>
+            )}
+          </div>
+          <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newKhataClientApplyGst}
+                onChange={e => setNewKhataClientApplyGst(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-border-subtle text-primary focus:ring-primary"
+              />
+              <span className="space-y-1">
+                <span className="block text-[11px] font-bold text-text-main uppercase tracking-widest">Apply 5% GST</span>
+                <span className="block text-[10px] font-medium text-text-muted">
+                  When enabled, this client&apos;s regular billing total includes 5% GST automatically.
+                </span>
+              </span>
+            </label>
           </div>
           <div className="pt-4">
             <button 
               type="submit"
               className="w-full bg-primary text-white py-3 rounded-lg text-xs font-bold uppercase tracking-widest flex items-center justify-center shadow-lg shadow-primary/20 hover:bg-primary-dark transition-all"
             >
-              <Save className="h-4 w-4 mr-2" /> Add Client to Registry
+              <Save className="h-4 w-4 mr-2" /> {editingKhataClientId ? "Update Khata Client" : "Add Client to Registry"}
             </button>
           </div>
         </form>

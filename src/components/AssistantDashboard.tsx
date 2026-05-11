@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Plus, ReceiptText, Wrench, Search, IndianRupee,
-  MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2
+  MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2, Clock
 } from 'lucide-react';
 import { AppState, CustomerEntry, MaintenanceEntry, CustomerType } from '../types';
 import { formatDate, cn } from '../lib/utils';
@@ -12,6 +12,7 @@ import Modal from './Modal';
 interface AssistantDashboardProps {
   state: AppState;
   activeTab: string;
+  setIsDayStarted: (status: boolean) => Promise<void>;
   setCustomers: React.Dispatch<React.SetStateAction<CustomerEntry[]>>;
   setMaintenance: React.Dispatch<React.SetStateAction<MaintenanceEntry[]>>;
   deleteRecord: (collection: string, id: string) => Promise<void>;
@@ -21,6 +22,7 @@ interface AssistantDashboardProps {
 export default function AssistantDashboard({ 
   state, 
   activeTab, 
+  setIsDayStarted,
   setCustomers, 
   setMaintenance,
   deleteRecord,
@@ -29,6 +31,13 @@ export default function AssistantDashboard({
   const [showEntryForm, setShowEntryForm] = useState<'NONE' | 'CUSTOMER' | 'MAINTENANCE'>('NONE');
   const [searchTerm, setSearchTerm] = useState('');
   const [customerTypeFilter, setCustomerTypeFilter] = useState<'ALL' | CustomerType>('ALL');
+  const todayKey = useMemo(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
 
   useEffect(() => {
     setSearchTerm('');
@@ -36,7 +45,7 @@ export default function AssistantDashboard({
   }, [activeTab]);
 
   const filteredCustomers = useMemo(() => {
-    let result = state.customers;
+    let result = state.customers.filter(c => (c.date || '').slice(0, 10) === todayKey);
 
     if (customerTypeFilter !== 'ALL') {
       result = result.filter(c => c.customerType === customerTypeFilter);
@@ -53,12 +62,14 @@ export default function AssistantDashboard({
       c.rate.toString().includes(term) ||
       c.addedBy.toLowerCase().includes(term)
     );
-  }, [state.customers, searchTerm, customerTypeFilter]);
+  }, [state.customers, searchTerm, customerTypeFilter, todayKey]);
 
   const filteredMaintenance = useMemo(() => {
     // Only show maintenance records added by this assistant
     const currentUserId = state.currentUser?.id;
-    let result = state.maintenance.filter(m => m.addedById === currentUserId);
+    let result = state.maintenance.filter(
+      m => m.addedById === currentUserId && (m.date || '').slice(0, 10) === todayKey
+    );
 
     if (!searchTerm) return result;
     const term = searchTerm.toLowerCase();
@@ -66,7 +77,7 @@ export default function AssistantDashboard({
       m.type.toLowerCase().includes(term) ||
       m.date.includes(term)
     );
-  }, [state.maintenance, searchTerm, state.currentUser?.id]);
+  }, [state.maintenance, searchTerm, state.currentUser?.id, todayKey]);
 
   // Form States
   const [custName, setCustName] = useState('');
@@ -77,8 +88,8 @@ export default function AssistantDashboard({
   const [asstRate, setAsstRate] = useState('');
 
   const uniqueKhataCustomers = useMemo(() => 
-    Array.from(new Set(state.customerRates.map(r => r.customerName))),
-    [state.customerRates]
+    Array.from(new Set(state.khataClients.map(client => client.name))),
+    [state.khataClients]
   );
 
   const availableKhataMaterials = useMemo(() => 
@@ -133,7 +144,13 @@ export default function AssistantDashboard({
       material: material,
       brass: parseFloat(brass),
       rate: finalRate,
-      amount: parseFloat(brass) * finalRate,
+      amount: (() => {
+        const baseAmount = parseFloat(brass) * finalRate;
+        const clientConfig = state.khataClients.find(
+          client => client.name.trim().toUpperCase() === custName.trim().toUpperCase()
+        );
+        return clientConfig?.applyGst ? baseAmount * 1.05 : baseAmount;
+      })(),
       paidAmount: 0,
       status: 'PENDING',
       addedBy: state.currentUser?.name || 'Unknown',
@@ -167,6 +184,106 @@ export default function AssistantDashboard({
     setMAmount('');
   };
 
+  const renderCustomersSection = (compact = false) => (
+    <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-8 text-center">
+      <ReceiptText className="h-10 w-10 text-text-muted mx-auto mb-4" />
+      <h3 className="text-base font-bold text-text-main uppercase tracking-widest">Client Records</h3>
+      <p className="text-text-muted text-xs max-w-xs mx-auto mt-2 mb-6">Assistant view for billing history. Full financial records are restricted.</p>
+      <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-6">Showing today's records only</p>
+      
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mb-8 max-w-lg mx-auto">
+        <select
+          value={customerTypeFilter}
+          onChange={(e) => setCustomerTypeFilter(e.target.value as any)}
+          className="px-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none cursor-pointer uppercase tracking-widest"
+        >
+          <option value="ALL">All Clients</option>
+          <option value="REGULAR">Regular</option>
+          <option value="OTHER">Others</option>
+        </select>
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
+          <input 
+            type="text" 
+            placeholder="Filter records..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9 pr-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full"
+          />
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
+              <th className="px-6 py-4">Date</th>
+              <th className="px-6 py-4">Vehicle</th>
+              <th className="px-6 py-4">Material</th>
+              <th className="px-6 py-4">Brass</th>
+              <th className="px-6 py-4 text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-subtle">
+            {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
+              <tr key={c.id}>
+                <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
+                <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
+                <td className="px-6 py-4 text-center">
+                  <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  const renderMaintenanceSection = () => (
+    <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-8 text-center">
+      <Wrench className="h-10 w-10 text-text-muted mx-auto mb-4" />
+      <h3 className="text-base font-bold text-text-main uppercase tracking-widest">Maintenance Logs</h3>
+      <p className="text-text-muted text-xs max-w-xs mx-auto mt-2 mb-6">View local service logs. Financial expenditure is hidden.</p>
+      <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-6">Showing today's logs only</p>
+      
+      <div className="relative max-w-sm mx-auto mb-8">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
+        <input 
+          type="text" 
+          placeholder="Filter logs..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="pl-9 pr-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full"
+        />
+      </div>
+
+      <div className="space-y-3 max-w-md mx-auto">
+        {filteredMaintenance.map(m => (
+          <div key={m.id} className="p-4 bg-bg-surface border border-border-subtle rounded-lg text-left flex justify-between items-center">
+            <div>
+              <p className="text-xs font-bold text-text-main uppercase">{m.type}</p>
+              <p className="text-[10px] text-text-muted font-bold uppercase">{formatDate(m.date)}</p>
+            </div>
+            <div className="flex items-center space-x-3">
+              {state.isDayStarted && (
+                <button 
+                  onClick={() => deleteRecord('maintenance', m.id)}
+                  className="text-danger hover:text-danger/80 transition-colors"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
+              <CheckCircle2 className="h-4 w-4 text-success" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   const renderDashboard = () => (
     <div className="space-y-6">
       {!state.isDayStarted && (
@@ -180,128 +297,44 @@ export default function AssistantDashboard({
           </div>
           <div>
             <p className="text-xs font-bold text-text-main uppercase tracking-tight">System Status: Locked</p>
-            <p className="text-[10px] text-text-muted font-bold uppercase tracking-tighter mt-0.5">Please wait for administration to signal "Day Start" to resume entries.</p>
+            <p className="text-[10px] text-text-muted font-bold uppercase tracking-tighter mt-0.5">Day access is paused. You can reopen operations here when the site is ready.</p>
           </div>
         </motion.div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <button 
-          onClick={() => state.isDayStarted && setShowEntryForm('CUSTOMER')}
-          disabled={!state.isDayStarted}
-          className={cn(
-            "flex flex-col items-start p-8 rounded-xl text-white shadow-xl transition-all text-left group relative overflow-hidden",
-            state.isDayStarted 
-              ? "bg-primary shadow-primary/10 hover:scale-[1.01]" 
-              : "bg-slate-400 cursor-not-allowed opacity-80"
-          )}
-        >
-          <div className="bg-white/10 p-3 rounded-lg mb-6 group-hover:bg-white/20 transition-colors">
-            <ReceiptText className="h-8 w-8" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">New Billing Entry</span>
-          <span className="text-sm opacity-60 mt-1 uppercase font-bold tracking-wider">Log Vehicle & Material Data</span>
-          {!state.isDayStarted && <Lock className="absolute top-4 right-4 h-6 w-6 text-white/30" />}
-        </button>
 
-        <button 
-          onClick={() => state.isDayStarted && setShowEntryForm('MAINTENANCE')}
-          disabled={!state.isDayStarted}
-          className={cn(
-            "flex flex-col items-start p-8 rounded-xl text-white shadow-xl transition-all text-left group relative overflow-hidden",
-            state.isDayStarted 
-              ? "bg-[#0F172A] hover:scale-[1.01]" 
-              : "bg-slate-500 cursor-not-allowed opacity-80"
-          )}
-        >
-          <div className="bg-white/5 p-3 rounded-lg mb-6 group-hover:bg-white/10 transition-colors">
-            <Wrench className="h-8 w-8 text-primary" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">Maintenance Entry</span>
-          <span className="text-sm opacity-50 mt-1 uppercase font-bold tracking-wider">Record Operations & Expenses</span>
-          {!state.isDayStarted && <Lock className="absolute top-4 right-4 h-6 w-6 text-white/30" />}
-        </button>
-      </div>
+      <div className="bg-white p-6 rounded-2xl border border-border-subtle shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 overflow-hidden relative">
+        <div className="relative z-10">
+          <h3 className="text-sm font-bold text-text-main uppercase tracking-widest flex items-center mb-1">
+            <Clock className="h-4 w-4 mr-2 text-primary" /> Day Control
+          </h3>
+          <p className="text-xs text-text-muted">Assistant access can now start or end the working day.</p>
+        </div>
 
-      <div className="mt-10">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 px-2">
-          <h3 className="text-xs font-bold text-text-muted uppercase tracking-widest">Recent Records (Non-Financial)</h3>
-          <div className="flex items-center space-x-2">
-            <select
-              value={customerTypeFilter}
-              onChange={(e) => setCustomerTypeFilter(e.target.value as any)}
-              className="px-3 py-1.5 bg-white border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none cursor-pointer uppercase tracking-widest"
+        <div className="flex items-center space-x-3 relative z-10">
+          {!state.isDayStarted ? (
+            <button
+              onClick={() => setIsDayStarted(true)}
+              className="flex items-center px-6 py-3 bg-success text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-success/90 transition-all shadow-lg shadow-success/20"
             >
-              <option value="ALL">All</option>
-              <option value="REGULAR">Regular</option>
-              <option value="OTHER">Others</option>
-            </select>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
-              <input 
-                type="text" 
-                placeholder="Search records..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-4 py-1.5 bg-white border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full sm:w-64 transition-all"
-              />
-            </div>
-          </div>
+              <CheckCircle2 className="h-4 w-4 mr-2" /> Start Day
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsDayStarted(false)}
+              className="flex items-center px-6 py-3 bg-danger text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-danger/90 transition-all shadow-lg shadow-danger/20"
+            >
+              <X className="h-4 w-4 mr-2" /> End Day
+            </button>
+          )}
         </div>
-        <div className="bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="bg-bg-surface border-b-2 border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
-                  <th className="px-6 py-4">Timestamp</th>
-                  <th className="px-6 py-4">Vehicle Identity</th>
-                  <th className="px-6 py-4">Client Entity</th>
-                  <th className="px-6 py-4">Material Details</th>
-                  <th className="px-6 py-4">Brass</th>
-                  <th className="px-6 py-4">Logged By</th>
-                  <th className="px-6 py-4 text-center">Verification</th>
-                  {state.isDayStarted && <th className="px-6 py-4 text-right">Action</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {filteredCustomers.map((c) => (
-                  <tr key={c.id} className="hover:bg-bg-surface/50 transition-colors">
-                    <td className="px-6 py-4 text-xs font-semibold text-text-muted uppercase">{formatDate(c.date)}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2 py-1 bg-bg-surface text-text-main text-[10px] font-bold rounded border border-border-subtle uppercase">
-                        {c.vehicleNumber}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm font-bold text-text-main uppercase tracking-tight">{c.customerName}</td>
-                    <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-text-main uppercase">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary border border-primary/20">
-                          {(c.addedBy || '').split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <span className="text-[9px] font-bold text-text-muted uppercase">{c.addedBy}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
-                    </td>
-                    {state.isDayStarted && (
-                      <td className="px-6 py-4 text-right">
-                        <button 
-                          onClick={() => deleteRecord('customers', c.id)}
-                          className="text-danger hover:text-danger/80 transition-colors"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+
+        <div className={cn(
+          "absolute right-0 top-0 h-full w-1/3 opacity-[0.03] pointer-events-none transition-colors duration-500",
+          state.isDayStarted ? "bg-success" : "bg-danger"
+        )} />
       </div>
+      {renderCustomersSection(true)}
+      {renderMaintenanceSection()}
     </div>
   );
 
@@ -349,103 +382,9 @@ export default function AssistantDashboard({
               </div>
             )}
             
-            {activeTab === 'customers' && (
-              <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-8 text-center">
-                <ReceiptText className="h-10 w-10 text-text-muted mx-auto mb-4" />
-                <h3 className="text-base font-bold text-text-main uppercase tracking-widest">Client Records</h3>
-                <p className="text-text-muted text-xs max-w-xs mx-auto mt-2 mb-6">Assistant view for billing history. Full financial records are restricted.</p>
-                
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-2 mb-8 max-w-lg mx-auto">
-                  <select
-                    value={customerTypeFilter}
-                    onChange={(e) => setCustomerTypeFilter(e.target.value as any)}
-                    className="px-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none cursor-pointer uppercase tracking-widest"
-                  >
-                    <option value="ALL">All Clients</option>
-                    <option value="REGULAR">Regular</option>
-                    <option value="OTHER">Others</option>
-                  </select>
-                  <div className="relative flex-1 w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
-                    <input 
-                      type="text" 
-                      placeholder="Filter records..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9 pr-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full"
-                    />
-                  </div>
-                </div>
+            {activeTab === 'customers' && renderCustomersSection(false)}
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
-                        <th className="px-6 py-4">Date</th>
-                        <th className="px-6 py-4">Vehicle</th>
-                        <th className="px-6 py-4">Material</th>
-                        <th className="px-6 py-4">Brass</th>
-                        <th className="px-6 py-4 text-center">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border-subtle">
-                      {filteredCustomers.slice(0, 15).map(c => (
-                        <tr key={c.id}>
-                          <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
-                          <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
-                          <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
-                          <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
-                          <td className="px-6 py-4 text-center">
-                            <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-              {activeTab === 'maintenance' && (
-                <div className="bg-white rounded-xl border border-border-subtle shadow-sm p-8 text-center">
-                  <Wrench className="h-10 w-10 text-text-muted mx-auto mb-4" />
-                  <h3 className="text-base font-bold text-text-main uppercase tracking-widest">Maintenance Logs</h3>
-                  <p className="text-text-muted text-xs max-w-xs mx-auto mt-2 mb-6">View local service logs. Financial expenditure is hidden.</p>
-                  
-                  <div className="relative max-w-sm mx-auto mb-8">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-text-muted" />
-                    <input 
-                      type="text" 
-                      placeholder="Filter logs..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-9 pr-4 py-2 bg-bg-surface border border-border-subtle rounded-lg text-xs font-medium focus:ring-1 focus:ring-primary outline-none w-full"
-                    />
-                  </div>
-  
-                  <div className="space-y-3 max-w-md mx-auto">
-                     {filteredMaintenance.map(m => (
-                       <div key={m.id} className="p-4 bg-bg-surface border border-border-subtle rounded-lg text-left flex justify-between items-center">
-                         <div>
-                           <p className="text-xs font-bold text-text-main uppercase">{m.type}</p>
-                           <p className="text-[10px] text-text-muted font-bold uppercase">{formatDate(m.date)}</p>
-                         </div>
-                         <div className="flex items-center space-x-3">
-                           {state.isDayStarted && (
-                             <button 
-                               onClick={() => deleteRecord('maintenance', m.id)}
-                               className="text-danger hover:text-danger/80 transition-colors"
-                             >
-                               <Trash2 className="h-4 w-4" />
-                             </button>
-                           )}
-                           <CheckCircle2 className="h-4 w-4 text-success" />
-                         </div>
-                       </div>
-                     ))}
-                  </div>
-                </div>
-              )}
+            {activeTab === 'maintenance' && renderMaintenanceSection()}
 
               
             </motion.div>

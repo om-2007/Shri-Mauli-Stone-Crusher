@@ -194,8 +194,13 @@ export async function initDb() {
 
   await pool.query(`CREATE TABLE IF NOT EXISTS khata_clients (
     id TEXT PRIMARY KEY,
-    name TEXT
+    name TEXT,
+    applyGst BOOLEAN DEFAULT FALSE
   )`);
+
+  try {
+    await pool.query(`ALTER TABLE khata_clients ADD COLUMN IF NOT EXISTS applyGst BOOLEAN DEFAULT FALSE`);
+  } catch {}
 }
 
 export async function safeInitDb() {
@@ -296,7 +301,13 @@ export async function getAppData() {
       material: entry.material || '',
       rate: entry.rate ? parseFloat(decrypt(entry.rate)) : 0,
     })),
-    khataClients: khataClients.rows.map((entry: any) => entry.name).filter(Boolean),
+    khataClients: khataClients.rows
+      .map((entry: any) => ({
+        id: entry.id,
+        name: entry.name || '',
+        applyGst: entry.applygst ?? entry.applyGst ?? false,
+      }))
+      .filter((entry: any) => entry.name),
     ownerProfile: ownerProfile.rows[0],
     notificationSettings: {
       enableKhataReminders: ownerProfile.rows[0]?.enablekhatareminders ?? true,
@@ -386,7 +397,7 @@ export async function deleteCollectionRecord(collection: string, id: string) {
   }
 
   if (tableName === 'khata_clients') {
-    await pool.query('DELETE FROM khata_clients WHERE name = $1', [id]);
+    await pool.query('DELETE FROM khata_clients WHERE id = $1', [id]);
   } else {
     await pool.query(`DELETE FROM ${tableName} WHERE id = $1`, [id]);
   }
@@ -618,13 +629,22 @@ export async function saveAssistant(payload: any) {
 
 export async function saveKhataClient(payload: any) {
   await safeInitDb();
-  const { name } = payload;
-  const id = Date.now().toString();
+  const { id, name, applyGst } = payload;
+  const normalizedName = (name || '').trim();
 
-  const existing = await pool.query('SELECT * FROM khata_clients WHERE name = $1', [name]);
-  if (existing.rows.length === 0) {
-    await pool.query('INSERT INTO khata_clients (id, name) VALUES ($1, $2)', [id, name]);
+  if (!normalizedName) {
+    throw new Error('Khata client name required');
   }
 
-  return { name };
+  const nextId = id || Date.now().toString();
+  await pool.query(
+    `INSERT INTO khata_clients (id, name, applyGst)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       applyGst = EXCLUDED.applyGst`,
+    [nextId, normalizedName, Boolean(applyGst)]
+  );
+
+  return { id: nextId, name: normalizedName, applyGst: Boolean(applyGst) };
 }

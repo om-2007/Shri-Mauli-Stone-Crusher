@@ -57,6 +57,12 @@ export interface CustomerRate {
   rate: number;
 }
 
+export interface KhataClient {
+  id: string;
+  name: string;
+  applyGst: boolean;
+}
+
 export interface KhataPayment {
   id: string;
   date: string;
@@ -88,7 +94,7 @@ export interface AppState {
   salaries: SalaryEntry[];
   assistants: User[];
   customerRates: CustomerRate[];
-  khataClients: string[];
+  khataClients: KhataClient[];
   khataPayments: KhataPayment[];
   notifications: Notification[];
   notificationSettings: NotificationSettings;
