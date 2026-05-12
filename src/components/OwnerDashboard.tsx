@@ -11,7 +11,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend
 } from 'recharts';
 import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient } from '../types';
-import { formatCurrency, formatDate, cn } from '../lib/utils';
+import { formatCurrency, formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import SettingsContent from './SettingsContent';
 import Modal from './Modal';
@@ -298,24 +298,48 @@ export default function OwnerDashboard({
     }
   };
 
+  useEffect(() => {
+    const normalizedVehicle = normalizeVehicleNumber(vehicle);
+    if (!normalizedVehicle) return;
+
+    const matchedCustomer = state.customers.find(
+      customer =>
+        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
+        customer.customerName?.trim() &&
+        customer.id !== editingId
+    );
+
+    if (matchedCustomer && matchedCustomer.customerName !== custName) {
+      setCustName(matchedCustomer.customerName);
+    }
+  }, [vehicle, custName, state.customers, editingId]);
+
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedVehicle = normalizeVehicleNumber(vehicle);
+    const matchedCustomer = state.customers.find(
+      customer =>
+        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
+        customer.customerName?.trim() &&
+        customer.id !== editingId
+    );
+    const resolvedCustomerName = matchedCustomer?.customerName?.trim() || custName.trim();
     const rateNum = custType === 'REGULAR' ? 0 : (isNaN(parseFloat(rate)) ? 0 : parseFloat(rate));
     const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
     const totalAmount = custType === 'REGULAR'
-      ? calculateRegularAmount(custName, material, brassNum)
+      ? calculateRegularAmount(resolvedCustomerName, material, brassNum)
       : brassNum * rateNum;
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
       // For edit - sync to backend with updateFlag
-      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: custName, customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
+      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
       const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
         date: new Date().toISOString().split('T')[0],
         vehicleNumber: vehicle,
-        customerName: custName,
+        customerName: resolvedCustomerName,
         customerType: custType,
         material: material,
         brass: parseFloat(brass),
@@ -330,12 +354,12 @@ export default function OwnerDashboard({
       (setCustomers as any)(newEntry);
       
       // If Khata Client (REGULAR), also save to DB
-      if (custType === 'REGULAR' && (custName || '').trim()) {
+      if (custType === 'REGULAR' && resolvedCustomerName) {
         // Add to Khata clients
-        (setKhataClients as any)({ name: (custName || '').trim(), applyGst: false });
+        (setKhataClients as any)({ name: resolvedCustomerName, applyGst: false });
         // Always create rate entry for the material (rate can be 0)
         if ((material || '').trim()) {
-          (setCustomerRates as any)({ customerName: custName, material: material, rate: parseFloat(rate) || 0 });
+          (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: parseFloat(rate) || 0 });
         }
       }
     }

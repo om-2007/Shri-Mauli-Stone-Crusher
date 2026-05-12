@@ -5,7 +5,7 @@ import {
   MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2, Clock
 } from 'lucide-react';
 import { AppState, CustomerEntry, MaintenanceEntry, CustomerType } from '../types';
-import { formatDate, cn } from '../lib/utils';
+import { formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
 
@@ -111,19 +111,41 @@ export default function AssistantDashboard({
       setCustType('OTHER');
     }
   }, [custName, state.customerRates]);
+
+  useEffect(() => {
+    const normalizedVehicle = normalizeVehicleNumber(vehicle);
+    if (!normalizedVehicle) return;
+
+    const matchedCustomer = state.customers.find(
+      customer =>
+        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
+        customer.customerName?.trim()
+    );
+
+    if (matchedCustomer && matchedCustomer.customerName !== custName) {
+      setCustName(matchedCustomer.customerName);
+    }
+  }, [vehicle, custName, state.customers]);
   
   const [mType, setMType] = useState('');
   const [mAmount, setMAmount] = useState('');
 
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    
+    const normalizedVehicle = normalizeVehicleNumber(vehicle);
+    const matchedCustomer = state.customers.find(
+      customer =>
+        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
+        customer.customerName?.trim()
+    );
+    const resolvedCustomerName = matchedCustomer?.customerName?.trim() || custName.trim();
+
     let finalRate = 0;
     if (custType === 'REGULAR') {
       // Check Khata for automatic rate assignment in background
-      if (custName.trim() && material.trim()) {
+      if (resolvedCustomerName && material.trim()) {
         const match = state.customerRates.find(
-          r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase() &&
+          r => r.customerName.trim().toUpperCase() === resolvedCustomerName.toUpperCase() &&
                r.material.trim().toUpperCase() === material.trim().toUpperCase()
         );
         if (match) {
@@ -139,7 +161,7 @@ export default function AssistantDashboard({
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
       vehicleNumber: vehicle,
-      customerName: custName,
+      customerName: resolvedCustomerName,
       customerType: custType,
       material: material,
       brass: parseFloat(brass),
@@ -147,7 +169,7 @@ export default function AssistantDashboard({
       amount: (() => {
         const baseAmount = parseFloat(brass) * finalRate;
         const clientConfig = state.khataClients.find(
-          client => client.name.trim().toUpperCase() === custName.trim().toUpperCase()
+          client => client.name.trim().toUpperCase() === resolvedCustomerName.toUpperCase()
         );
         return clientConfig?.applyGst ? baseAmount * 1.05 : baseAmount;
       })(),

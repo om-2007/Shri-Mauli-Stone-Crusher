@@ -20,3 +20,7 @@ export function formatDate(dateStr: string): string {
     year: 'numeric',
   });
 }
+
+export function normalizeVehicleNumber(vehicle: string): string {
+  return (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
+}

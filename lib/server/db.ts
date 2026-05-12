@@ -67,6 +67,10 @@ export function isBusinessHoursIST() {
   return currentTime >= 6.0 && currentTime < 21.0;
 }
 
+function normalizeVehicleNumber(vehicle: string) {
+  return (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
+}
+
 export async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -423,8 +427,30 @@ export async function saveCustomer(payload: any) {
     updateFlag,
   } = payload;
 
-  if (!vehicleNumber || !customerName) {
+  const trimmedVehicleNumber = (vehicleNumber || '').trim();
+  const trimmedCustomerName = (customerName || '').trim();
+
+  if (!trimmedVehicleNumber || !trimmedCustomerName) {
     throw new Error('Vehicle number and customer name are required');
+  }
+
+  const normalizedVehicleNumber = normalizeVehicleNumber(trimmedVehicleNumber);
+  let resolvedCustomerName = trimmedCustomerName;
+
+  if (normalizedVehicleNumber) {
+    const existingCustomers = await pool.query(
+      'SELECT id, customerName, vehicleNumber FROM customers WHERE id <> $1',
+      [id || '']
+    );
+    const matchedCustomer = existingCustomers.rows.find(
+      (customer: any) =>
+        normalizeVehicleNumber(customer.vehiclenumber || customer.vehicleNumber || '') === normalizedVehicleNumber &&
+        (customer.customername || customer.customerName || '').trim()
+    );
+
+    if (matchedCustomer) {
+      resolvedCustomerName = (matchedCustomer.customername || matchedCustomer.customerName || '').trim();
+    }
   }
 
   const date = new Date().toISOString();
@@ -436,8 +462,8 @@ export async function saveCustomer(payload: any) {
            rate = $6, amount = $7, paidAmount = $8, status = $9, date = $10, addedBy = $11, addedById = $12
        WHERE id = $13`,
       [
-        vehicleNumber,
-        customerName,
+        trimmedVehicleNumber,
+        resolvedCustomerName,
         customerType || 'OTHER',
         material || '',
         brass || '0',
@@ -452,7 +478,7 @@ export async function saveCustomer(payload: any) {
       ]
     );
 
-    return { id, vehicleNumber, customerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
   }
 
   const newId = Date.now().toString();
@@ -461,8 +487,8 @@ export async function saveCustomer(payload: any) {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
     [
       newId,
-      vehicleNumber,
-      customerName,
+      trimmedVehicleNumber,
+      resolvedCustomerName,
       customerType || 'OTHER',
       material || '',
       brass || '0',
@@ -476,7 +502,7 @@ export async function saveCustomer(payload: any) {
     ]
   );
 
-  return { id: newId, vehicleNumber, customerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
 }
 
 export async function updateCustomer(id: string, payload: any) {
