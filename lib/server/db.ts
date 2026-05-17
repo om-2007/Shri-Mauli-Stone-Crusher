@@ -18,9 +18,9 @@ function createPool() {
   return new Pool({
     connectionString: getDatabaseUrl(),
     max: 5,
-    connectionTimeoutMillis: 8000,
-    query_timeout: 8000,
-    statement_timeout: 8000,
+    connectionTimeoutMillis: 20000,
+    query_timeout: 20000,
+    statement_timeout: 20000,
     idleTimeoutMillis: 30000,
     allowExitOnIdle: true,
     ssl: {
