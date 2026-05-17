@@ -5,7 +5,7 @@ import {
   MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2, Clock
 } from 'lucide-react';
 import { AppState, CustomerEntry, MaintenanceEntry, CustomerType, RateUnit } from '../types';
-import { formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
+import { formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
 
@@ -119,6 +119,10 @@ export default function AssistantDashboard({
   useEffect(() => {
     const normalizedVehicle = normalizeVehicleNumber(vehicle);
     if (!normalizedVehicle) return;
+
+    if (EXCLUDED_VEHICLES.some(v => normalizeVehicleNumber(v) === normalizedVehicle)) {
+      return;
+    }
 
     const matchedCustomer = state.customers.find(
       customer =>

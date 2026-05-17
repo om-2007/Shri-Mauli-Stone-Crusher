@@ -11,7 +11,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend
 } from 'recharts';
 import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient, RateUnit } from '../types';
-import { formatCurrency, formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
+import { formatCurrency, formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import SettingsContent from './SettingsContent';
 import Modal from './Modal';
@@ -697,6 +697,10 @@ export default function OwnerDashboard({
   useEffect(() => {
     const normalizedVehicle = normalizeVehicleNumber(vehicle);
     if (!normalizedVehicle) return;
+
+    if (EXCLUDED_VEHICLES.some(v => normalizeVehicleNumber(v) === normalizedVehicle)) {
+      return;
+    }
 
     const matchedCustomer = state.customers.find(
       customer =>

@@ -24,3 +24,9 @@ export function formatDate(dateStr: string): string {
 export function normalizeVehicleNumber(vehicle: string): string {
   return (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
 }
+
+export const EXCLUDED_VEHICLES = [
+  'MH-10-Z-4644', 'MH-10-Z-4635', 'MH-10-AW-7200', 'MH-10-AW-7236',
+  'MH-10-AW-9954', 'MH-10-CR-4014', 'MH-10-CR-4023', 'MH-10-CB-0045',
+  'MH-10-BF-3334', 'MH-10-BK-234', 'MH-10-CD-7803', 'MH-10-DM-567'
+];
