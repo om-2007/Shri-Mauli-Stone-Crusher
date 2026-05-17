@@ -20,6 +20,7 @@ export interface CustomerEntry {
   date: string;
   vehicleNumber: string;
   customerName: string;
+  site?: string;
   customerType: CustomerType;
   material: string;
   brass: number;
@@ -89,6 +90,7 @@ export interface NotificationSettings {
 
 export interface AppState {
   currentUser: User | null;
+  ownerProfile?: User | null;
   customers: CustomerEntry[];
   maintenance: MaintenanceEntry[];
   salaries: SalaryEntry[];

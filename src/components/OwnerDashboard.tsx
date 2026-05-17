@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, Wallet, Clock, CheckCircle2, 
   Plus, Search, Filter, ArrowUpRight, ArrowDownRight,
   IndianRupee, Calendar, Briefcase, UserPlus, Settings, Wrench,
-  Trash2, BookOpen, UserCircle, FolderPlus, ChevronRight, User as UserIcon, X
+  Trash2, BookOpen, UserCircle, FolderPlus, ChevronRight, User as UserIcon, X, Printer, MapPin
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -66,6 +66,7 @@ export default function OwnerDashboard({
   // Customer Form States
   const [custName, setCustName] = useState('');
   const [vehicle, setVehicle] = useState('');
+  const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
   const [brass, setBrass] = useState('');
   const [rate, setRate] = useState('');
@@ -162,14 +163,367 @@ export default function OwnerDashboard({
         client.applyGst
     );
 
-  const calculateRegularAmount = (customerName: string, materialName: string, brassValue: number) => {
+  const getRegularRate = (customerName: string, materialName: string, fallbackRate = 0) => {
     const rateRec = state.customerRates.find(
       r =>
         r.customerName.trim().toUpperCase() === customerName.trim().toUpperCase() &&
         r.material.trim().toUpperCase() === materialName.trim().toUpperCase()
     );
-    const baseAmount = rateRec && rateRec.rate ? brassValue * rateRec.rate : 0;
+
+    return rateRec?.rate || fallbackRate || 0;
+  };
+
+  const calculateRegularAmount = (customerName: string, materialName: string, brassValue: number) => {
+    const baseAmount = brassValue * getRegularRate(customerName, materialName);
     return shouldApplyGst(customerName) ? baseAmount * 1.05 : baseAmount;
+  };
+
+  const escapeHtml = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const handlePrintKhataBill = () => {
+    if (!selectedKhataClient || !selectedKhataClientData) return;
+
+    const clientTransactions = state.customers.filter(
+      customer =>
+        customer.customerName.trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
+    );
+
+    if (clientTransactions.length === 0) {
+      window.alert('No billing records found for this khata client.');
+      return;
+    }
+
+    const groupedItems = clientTransactions.reduce((acc, customer) => {
+      const key = customer.material.trim().toUpperCase();
+      const rateForMaterial = getRegularRate(customer.customerName, customer.material, customer.rate);
+      const existing = acc.get(key);
+
+      if (existing) {
+        existing.totalBrass += customer.brass;
+        existing.amount += customer.brass * rateForMaterial;
+      } else {
+        acc.set(key, {
+          material: customer.material,
+          totalBrass: customer.brass,
+          rate: rateForMaterial,
+          amount: customer.brass * rateForMaterial,
+        });
+      }
+
+      return acc;
+    }, new Map<string, { material: string; totalBrass: number; rate: number; amount: number }>());
+
+    const items = Array.from(groupedItems.values()).sort((a, b) => a.material.localeCompare(b.material));
+    const subTotal = items.reduce((sum, item) => sum + item.amount, 0);
+    const gstAmount = selectedKhataClientData.applyGst ? subTotal * 0.05 : 0;
+    const grandTotal = subTotal + gstAmount;
+    const generatedDate = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+    const totalBrass = items.reduce((sum, item) => sum + item.totalBrass, 0);
+    const ownerName = state.ownerProfile?.name || 'Nilesh Karande';
+    const ownerPhone = state.ownerProfile?.phone || '9370763003';
+    const logoUrl = `${window.location.origin}/shri-mauli-logo.png`;
+
+    const printWindow = window.open('', '_blank', 'width=980,height=720');
+    if (!printWindow) {
+      window.alert('Please allow pop-ups to print the khata bill.');
+      return;
+    }
+
+    const rowsHtml = items
+      .map(
+        item => `
+          <tr>
+            <td>${escapeHtml(item.material)}</td>
+            <td class="num">${item.totalBrass.toFixed(2)}</td>
+            <td class="num">${item.rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+            <td class="num">${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+          </tr>
+        `
+      )
+      .join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Khata Bill - ${escapeHtml(selectedKhataClient)}</title>
+          <style>
+            @page { size: A4; margin: 16mm; }
+            * { box-sizing: border-box; }
+            body {
+              margin: 0;
+              font-family: Arial, sans-serif;
+              color: #111827;
+              background: #fff7ed;
+            }
+            .sheet {
+              background: white;
+              border: 1px solid #fed7aa;
+              border-radius: 20px;
+              padding: 28px;
+              position: relative;
+              overflow: hidden;
+            }
+            .sheet::before {
+              content: "";
+              position: absolute;
+              inset: 0;
+              background: linear-gradient(135deg, rgba(249,115,22,0.10), transparent 35%, rgba(251,191,36,0.10));
+              pointer-events: none;
+            }
+            .content { position: relative; z-index: 1; }
+            .header {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 20px;
+              padding-bottom: 22px;
+              border-bottom: 2px solid #fdba74;
+            }
+            .brand {
+              display: flex;
+              gap: 16px;
+              align-items: center;
+            }
+            .logo {
+              width: 84px;
+              height: 84px;
+              border-radius: 18px;
+              object-fit: cover;
+              border: 3px solid #fdba74;
+              background: white;
+            }
+            .title {
+              font-size: 28px;
+              font-weight: 800;
+              color: #9a3412;
+              margin: 0 0 4px;
+              letter-spacing: 0.02em;
+              text-transform: uppercase;
+            }
+            .subtitle, .meta, .client-meta {
+              margin: 0;
+              font-size: 13px;
+              color: #7c2d12;
+            }
+            .bill-tag {
+              background: #fff7ed;
+              border: 1px solid #fdba74;
+              border-radius: 16px;
+              padding: 14px 16px;
+              min-width: 220px;
+            }
+            .bill-tag h2 {
+              margin: 0 0 8px;
+              font-size: 12px;
+              letter-spacing: 0.18em;
+              color: #9a3412;
+              text-transform: uppercase;
+            }
+            .section {
+              margin-top: 22px;
+            }
+            .client-card {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 12px;
+              padding: 16px;
+              background: #fffaf5;
+              border: 1px solid #fed7aa;
+              border-radius: 16px;
+            }
+            .label {
+              display: block;
+              font-size: 11px;
+              font-weight: 700;
+              letter-spacing: 0.12em;
+              color: #9a3412;
+              text-transform: uppercase;
+              margin-bottom: 6px;
+            }
+            .value {
+              font-size: 15px;
+              font-weight: 700;
+              color: #111827;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 16px;
+              overflow: hidden;
+              border-radius: 14px;
+            }
+            thead th {
+              background: #9a3412;
+              color: white;
+              text-align: left;
+              padding: 12px 14px;
+              font-size: 11px;
+              letter-spacing: 0.12em;
+              text-transform: uppercase;
+            }
+            tbody td {
+              padding: 12px 14px;
+              font-size: 13px;
+              border-bottom: 1px solid #fed7aa;
+              background: white;
+            }
+            tbody tr:nth-child(even) td {
+              background: #fffaf5;
+            }
+            .num {
+              text-align: right;
+              font-variant-numeric: tabular-nums;
+            }
+            .footer {
+              display: grid;
+              grid-template-columns: 1.1fr 0.9fr;
+              gap: 28px;
+              align-items: end;
+              margin-top: 28px;
+            }
+            .totals {
+              border: 1px solid #fdba74;
+              border-radius: 16px;
+              background: #fffaf5;
+              padding: 18px;
+            }
+            .total-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding: 8px 0;
+              font-size: 14px;
+              border-bottom: 1px dashed #fdba74;
+            }
+            .total-row:last-child {
+              border-bottom: none;
+              padding-bottom: 0;
+            }
+            .grand {
+              font-size: 18px;
+              font-weight: 800;
+              color: #9a3412;
+              padding-top: 12px;
+            }
+            .signature {
+              padding: 18px;
+              text-align: right;
+            }
+            .signature-line {
+              margin-top: 72px;
+              border-top: 2px solid #7c2d12;
+              padding-top: 8px;
+              display: inline-block;
+              min-width: 240px;
+              text-align: center;
+              font-size: 14px;
+              font-weight: 700;
+              color: #7c2d12;
+            }
+            .note {
+              margin-top: 18px;
+              font-size: 11px;
+              color: #7c2d12;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            <div class="content">
+              <div class="header">
+                <div class="brand">
+                  <img class="logo" src="${logoUrl}" alt="Shri Mauli Stone Crusher Logo" />
+                  <div>
+                    <h1 class="title">Shri Mauli Stone Crusher</h1>
+                    <p class="subtitle">Owner: ${escapeHtml(ownerName)}</p>
+                    <p class="subtitle">Contact: ${escapeHtml(ownerPhone)}</p>
+                  </div>
+                </div>
+                <div class="bill-tag">
+                  <h2>Khata Bill</h2>
+                  <p class="meta">Date: ${escapeHtml(generatedDate)}</p>
+                  <p class="meta">Client: ${escapeHtml(selectedKhataClient)}</p>
+                  <p class="meta">GST: ${selectedKhataClientData.applyGst ? 'Applied @ 5%' : 'Not Applied'}</p>
+                </div>
+              </div>
+
+              <div class="section client-card">
+                <div>
+                  <span class="label">Client Name</span>
+                  <span class="value">${escapeHtml(selectedKhataClient)}</span>
+                </div>
+                <div>
+                  <span class="label">Material Entries</span>
+                  <span class="value">${items.length}</span>
+                </div>
+                <div>
+                  <span class="label">Total Brass</span>
+                  <span class="value">${totalBrass.toFixed(2)} BRS</span>
+                </div>
+              </div>
+
+              <div class="section">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th class="num">Total Brass</th>
+                      <th class="num">Rate</th>
+                      <th class="num">Rate x Brass</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${rowsHtml}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="footer">
+                <div class="totals">
+                  <div class="total-row">
+                    <span>Subtotal</span>
+                    <strong>${subTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                  </div>
+                  <div class="total-row">
+                    <span>GST ${selectedKhataClientData.applyGst ? '(5%)' : '(Not Applied)'}</span>
+                    <strong>${gstAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                  </div>
+                  <div class="total-row grand">
+                    <span>Grand Total</span>
+                    <strong>${grandTotal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                  </div>
+                  <p class="note">This khata bill is generated from the client material ledger maintained in Shri Mauli Stone Crusher.</p>
+                </div>
+
+                <div class="signature">
+                  <div class="signature-line">
+                    Nilesh Surakant Karande
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <script>
+            window.addEventListener('load', () => {
+              window.print();
+            });
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   };
 
    const handleAddKhataClient = async (e: React.FormEvent) => {
@@ -333,13 +687,14 @@ export default function OwnerDashboard({
 
     if (editingId) {
       // For edit - sync to backend with updateFlag
-      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
+      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
       const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
         date: new Date().toISOString().split('T')[0],
         vehicleNumber: vehicle,
         customerName: resolvedCustomerName,
+        site: site.trim(),
         customerType: custType,
         material: material,
         brass: parseFloat(brass),
@@ -368,6 +723,7 @@ export default function OwnerDashboard({
     setEditingId(null);
     setCustName('');
     setVehicle('');
+    setSite('');
     setMaterial('');
     setBrass('');
     setRate('');
@@ -378,6 +734,7 @@ export default function OwnerDashboard({
     setEditingId(customer.id);
     setCustName(customer.customerName);
     setVehicle(customer.vehicleNumber);
+    setSite(customer.site || '');
     setMaterial(customer.material);
     setBrass(customer.brass.toString());
     setRate(customer.rate.toString());
@@ -422,6 +779,7 @@ export default function OwnerDashboard({
     return result.filter(c => 
       c.vehicleNumber.toLowerCase().includes(term) ||
       c.customerName.toLowerCase().includes(term) ||
+      (c.site || '').toLowerCase().includes(term) ||
       c.material.toLowerCase().includes(term) ||
       c.status.toLowerCase().includes(term) ||
       c.date.includes(term) ||
@@ -711,6 +1069,7 @@ export default function OwnerDashboard({
               <th className="px-6 py-4">Date</th>
               <th className="px-6 py-4">Vehicle Identity</th>
               <th className="px-6 py-4">Customer Entity</th>
+              <th className="px-6 py-4">Site</th>
               <th className="px-6 py-4">Material Specification</th>
               <th className="px-6 py-4">Quantity (Brass)</th>
               <th className="px-6 py-4">Rate (₹)</th>
@@ -737,6 +1096,7 @@ export default function OwnerDashboard({
                     <span className="text-[10px] text-text-muted uppercase tracking-tight font-bold">{customer.customerType} CLIENT</span>
                   </div>
                 </td>
+                <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{customer.site || '-'}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main">{customer.material}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.brass} <span className="text-text-muted font-normal uppercase tracking-tighter">BRS</span></td>
                 <td className="px-6 py-4 text-xs font-bold text-text-muted">{customer.customerType === 'REGULAR' ? '-' : formatCurrency(customer.rate)}</td>
@@ -1132,6 +1492,12 @@ export default function OwnerDashboard({
                       <IndianRupee className="h-3 w-3 mr-1.5" /> LOG PAYMENT
                     </button>
                     <button 
+                      onClick={handlePrintKhataBill}
+                      className="flex-1 sm:flex-none px-4 py-2 bg-warning text-white rounded-lg text-xs font-bold hover:opacity-90 flex items-center justify-center shadow-md shadow-warning/10 whitespace-nowrap"
+                    >
+                      <Printer className="h-3 w-3 mr-1.5" /> PRINT BILL
+                    </button>
+                    <button 
                       onClick={() => {
                         setKhataCustName(selectedKhataClient);
                         setIsKhataModalOpen(true);
@@ -1525,6 +1891,13 @@ export default function OwnerDashboard({
         onClose={() => {
           setIsCustomerModalOpen(false);
           setEditingId(null);
+          setCustName('');
+          setVehicle('');
+          setSite('');
+          setMaterial('');
+          setBrass('');
+          setRate('');
+          setPaidAmount('');
         }}
         title={editingId ? "Update Billing Record" : "New Billing Record"}
       >
@@ -1569,6 +1942,19 @@ export default function OwnerDashboard({
                 <option key={name} value={name} />
               ))}
             </datalist>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Site</label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+              <input 
+                type="text"
+                value={site}
+                onChange={e => setSite(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
+                placeholder="Delivery Site / Location"
+              />
+            </div>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material</label>

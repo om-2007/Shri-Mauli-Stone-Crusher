@@ -76,6 +76,7 @@ export async function initDb() {
     id TEXT PRIMARY KEY,
     vehicleNumber TEXT,
     customerName TEXT,
+    site TEXT,
     customerType TEXT,
     material TEXT,
     brass TEXT,
@@ -91,6 +92,7 @@ export async function initDb() {
   const customerAlterQueries = [
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS vehicleNumber TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS customerName TEXT`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS site TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS customerType TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS material TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS brass TEXT`,
@@ -258,6 +260,7 @@ export async function getAppData() {
       id: customer.id,
       vehicleNumber: customer.vehiclenumber || customer.vehicleNumber || '',
       customerName: customer.customername || customer.customerName || '',
+      site: customer.site || '',
       customerType: customer.customertype || customer.customerType || 'OTHER',
       material: customer.material || '',
       brass: customer.brass ? parseFloat(customer.brass) : 0,
@@ -415,6 +418,7 @@ export async function saveCustomer(payload: any) {
     id,
     vehicleNumber,
     customerName,
+    site,
     customerType,
     material,
     brass,
@@ -458,12 +462,13 @@ export async function saveCustomer(payload: any) {
   if (id && updateFlag) {
     await pool.query(
       `UPDATE customers
-       SET vehicleNumber = $1, customerName = $2, customerType = $3, material = $4, brass = $5,
-           rate = $6, amount = $7, paidAmount = $8, status = $9, date = $10, addedBy = $11, addedById = $12
-       WHERE id = $13`,
+       SET vehicleNumber = $1, customerName = $2, site = $3, customerType = $4, material = $5, brass = $6,
+           rate = $7, amount = $8, paidAmount = $9, status = $10, date = $11, addedBy = $12, addedById = $13
+       WHERE id = $14`,
       [
         trimmedVehicleNumber,
         resolvedCustomerName,
+        site || '',
         customerType || 'OTHER',
         material || '',
         brass || '0',
@@ -478,17 +483,18 @@ export async function saveCustomer(payload: any) {
       ]
     );
 
-    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
   }
 
   const newId = Date.now().toString();
   await pool.query(
-    `INSERT INTO customers (id, vehicleNumber, customerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `INSERT INTO customers (id, vehicleNumber, customerName, site, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
     [
       newId,
       trimmedVehicleNumber,
       resolvedCustomerName,
+      site || '',
       customerType || 'OTHER',
       material || '',
       brass || '0',
@@ -502,7 +508,7 @@ export async function saveCustomer(payload: any) {
     ]
   );
 
-  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
 }
 
 export async function updateCustomer(id: string, payload: any) {

@@ -56,6 +56,7 @@ export default function AssistantDashboard({
     return result.filter(c => 
       c.vehicleNumber.toLowerCase().includes(term) ||
       c.customerName.toLowerCase().includes(term) ||
+      (c.site || '').toLowerCase().includes(term) ||
       c.material.toLowerCase().includes(term) ||
       c.date.includes(term) ||
       c.brass.toString().includes(term) ||
@@ -83,6 +84,7 @@ export default function AssistantDashboard({
   const [custName, setCustName] = useState('');
   const [custType, setCustType] = useState<CustomerType>('OTHER');
   const [vehicle, setVehicle] = useState('');
+  const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
   const [brass, setBrass] = useState('');
   const [asstRate, setAsstRate] = useState('');
@@ -162,6 +164,7 @@ export default function AssistantDashboard({
       date: new Date().toISOString().split('T')[0],
       vehicleNumber: vehicle,
       customerName: resolvedCustomerName,
+      site: site.trim(),
       customerType: custType,
       material: material,
       brass: parseFloat(brass),
@@ -183,6 +186,7 @@ export default function AssistantDashboard({
     setShowEntryForm('NONE');
     setCustName('');
     setVehicle('');
+    setSite('');
     setMaterial('');
     setBrass('');
     setAsstRate('');
@@ -241,6 +245,7 @@ export default function AssistantDashboard({
             <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
               <th className="px-6 py-4">Date</th>
               <th className="px-6 py-4">Vehicle</th>
+              <th className="px-6 py-4">Site</th>
               <th className="px-6 py-4">Material</th>
               <th className="px-6 py-4">Brass</th>
               <th className="px-6 py-4 text-center">Status</th>
@@ -251,6 +256,7 @@ export default function AssistantDashboard({
               <tr key={c.id}>
                 <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
+                <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{c.site || '-'}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
                 <td className="px-6 py-4 text-center">
@@ -416,7 +422,15 @@ export default function AssistantDashboard({
       {/* Entry Modals */}
       <Modal 
         isOpen={showEntryForm === 'CUSTOMER'} 
-        onClose={() => setShowEntryForm('NONE')}
+        onClose={() => {
+          setShowEntryForm('NONE');
+          setCustName('');
+          setVehicle('');
+          setSite('');
+          setMaterial('');
+          setBrass('');
+          setAsstRate('');
+        }}
         title="New Billing Entry"
       >
         <form className="space-y-4" onSubmit={handleAddCustomer}>
@@ -458,6 +472,19 @@ export default function AssistantDashboard({
                   <option key={name} value={name} />
                 ))}
               </datalist>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Site</label>
+            <div className="relative">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+              <input 
+                type="text"
+                value={site}
+                onChange={e => setSite(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
+                placeholder="Delivery Site / Location"
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

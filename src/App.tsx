@@ -542,6 +542,7 @@ const syncKhataPayment = async (data: any) => {
 
   const appState: AppState = {
     currentUser,
+    ownerProfile: ownerProfile ? { ...ownerProfile, role: 'OWNER' } : DEFAULT_OWNER,
     customers,
     maintenance,
     salaries,
