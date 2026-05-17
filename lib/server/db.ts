@@ -4,6 +4,7 @@ import pg from 'pg';
 const { Pool } = pg;
 
 let poolInstance: pg.Pool | null = null;
+let initPromise: Promise<void> | null = null;
 
 function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -16,6 +17,10 @@ function getDatabaseUrl() {
 function createPool() {
   return new Pool({
     connectionString: getDatabaseUrl(),
+    max: 5,
+    connectionTimeoutMillis: 8000,
+    idleTimeoutMillis: 30000,
+    allowExitOnIdle: true,
     ssl: {
       rejectUnauthorized: false,
     },
@@ -211,7 +216,13 @@ export async function initDb() {
 
 export async function safeInitDb() {
   getPool();
-  await initDb();
+  if (!initPromise) {
+    initPromise = initDb().catch((error) => {
+      initPromise = null;
+      throw error;
+    });
+  }
+  await initPromise;
 }
 
 export async function autoUpdateDayStatus() {
@@ -235,24 +246,32 @@ export async function getAppData() {
   await safeInitDb();
   await autoUpdateDayStatus();
 
-  const customers = await pool.query("SELECT * FROM customers");
-  const maintenance = await pool.query("SELECT * FROM maintenance");
-  const salaries = await pool.query("SELECT * FROM salaries");
+  const [
+    customers,
+    maintenance,
+    salaries,
+    khataPaymentsResult,
+    assistants,
+    customerRates,
+    khataClients,
+    ownerProfile,
+    systemState,
+  ] = await Promise.all([
+    pool.query("SELECT * FROM customers"),
+    pool.query("SELECT * FROM maintenance"),
+    pool.query("SELECT * FROM salaries"),
+    pool.query("SELECT * FROM khata_payments").catch(async () => {
+      const fallback = await pool.query("SELECT * FROM khata_logs").catch(() => ({ rows: [] }));
+      return fallback;
+    }),
+    pool.query("SELECT * FROM assistants"),
+    pool.query("SELECT * FROM customer_rates"),
+    pool.query("SELECT * FROM khata_clients"),
+    pool.query("SELECT * FROM owner_profile WHERE id = $1", [DEFAULT_OWNER.id]),
+    pool.query("SELECT * FROM system_state"),
+  ]);
 
-  let khataPaymentsRows: any[] = [];
-  try {
-    const result = await pool.query("SELECT * FROM khata_payments");
-    khataPaymentsRows = result.rows;
-  } catch {
-    const result = await pool.query("SELECT * FROM khata_logs").catch(() => ({ rows: [] }));
-    khataPaymentsRows = result.rows;
-  }
-
-  const assistants = await pool.query("SELECT * FROM assistants");
-  const customerRates = await pool.query("SELECT * FROM customer_rates");
-  const khataClients = await pool.query("SELECT * FROM khata_clients");
-  const ownerProfile = await pool.query("SELECT * FROM owner_profile WHERE id = $1", [DEFAULT_OWNER.id]);
-  const systemState = await pool.query("SELECT * FROM system_state");
+  const khataPaymentsRows: any[] = khataPaymentsResult.rows;
   const isDayStarted = systemState.rows.find((row: any) => row.key === 'isDayStarted')?.value === 'true';
 
   return {

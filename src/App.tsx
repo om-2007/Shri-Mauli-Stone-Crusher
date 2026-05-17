@@ -52,6 +52,17 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState('');
 
+  const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 12000) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
   const parseJsonResponse = async (res: Response, label: string) => {
     const contentType = res.headers.get('content-type') || '';
     const raw = await res.text();
@@ -101,7 +112,7 @@ export default function App() {
   };
 
   const refreshData = async (label: string) => {
-    const res = await fetch('/api/data', { cache: 'no-store' });
+    const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 12000);
     const data = await parseJsonResponse(res, label);
     applyServerData(data);
     return data;
@@ -124,9 +135,11 @@ export default function App() {
         console.error('Failed to fetch data', err);
         setOwnerProfile(DEFAULT_OWNER);
         setSetupError(
-          err instanceof Error && err.message.includes('DATABASE_URL')
-            ? 'Database is not connected. Add DATABASE_URL in Vercel or .env.local, then redeploy.'
-            : 'Database connection failed. Check your CockroachDB connection string and redeploy.'
+          err instanceof Error && err.name === 'AbortError'
+            ? 'Startup timed out. Database is responding too slowly or is unreachable. Check DATABASE_URL and CockroachDB status, then refresh.'
+            : err instanceof Error && err.message.includes('DATABASE_URL')
+              ? 'Database is not connected. Add DATABASE_URL in Vercel or .env.local, then redeploy.'
+              : 'Database connection failed. Check your CockroachDB connection string and redeploy.'
         );
         setLoading(false);
       });
@@ -136,7 +149,7 @@ export default function App() {
   useEffect(() => {
     const pollDayStatus = async () => {
       try {
-        const res = await fetch('/api/system-state');
+        const res = await fetchWithTimeout('/api/system-state', undefined, 8000);
         const data = await parseJsonResponse(res, 'Day status poll');
         if (data.isDayStarted !== undefined && data.isDayStarted !== isDayStarted) {
           setIsDayStarted(data.isDayStarted);
