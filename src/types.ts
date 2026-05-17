@@ -14,6 +14,7 @@ export interface User {
 }
 
 export type CustomerType = 'REGULAR' | 'OTHER';
+export type RateUnit = 'PER_BRASS' | 'PER_WEIGHT';
 
 export interface CustomerEntry {
   id: string;
@@ -24,8 +25,10 @@ export interface CustomerEntry {
   customerType: CustomerType;
   material: string;
   brass: number;
+  weight: number;
+  rateUnit: RateUnit;
   rate: number; // Added rate field
-  amount: number; // Total Valuation (Brass * Rate)
+  amount: number; // Total Valuation based on selected rate unit
   paidAmount: number; // Amount paid by customer
   status: 'PAID' | 'PENDING';
   addedBy: string;
@@ -56,6 +59,7 @@ export interface CustomerRate {
   customerName: string; // Linking by name for now as per system design
   material: string;
   rate: number;
+  rateUnit: RateUnit;
 }
 
 export interface KhataClient {

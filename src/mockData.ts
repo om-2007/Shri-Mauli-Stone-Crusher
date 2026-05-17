@@ -26,6 +26,8 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     customerType: 'REGULAR',
     material: 'Crushed Stone (20mm)',
     brass: 2.5,
+    weight: 0,
+    rateUnit: 'PER_BRASS',
     rate: 6000,
     amount: 15000,
     paidAmount: 15000,
@@ -42,6 +44,8 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     customerType: 'OTHER',
     material: 'Dust',
     brass: 4.0,
+    weight: 0,
+    rateUnit: 'PER_BRASS',
     rate: 3000,
     amount: 12000,
     paidAmount: 5000,
@@ -58,6 +62,8 @@ export const MOCK_CUSTOMERS: CustomerEntry[] = [
     customerType: 'REGULAR',
     material: 'Crushed Stone (10mm)',
     brass: 1.5,
+    weight: 0,
+    rateUnit: 'PER_BRASS',
     rate: 6000,
     amount: 9000,
     paidAmount: 9000,
@@ -111,18 +117,21 @@ export const MOCK_CUSTOMER_RATES: CustomerRate[] = [
     customerName: 'Mauli Builders',
     material: 'Crushed Stone (20mm)',
     rate: 6000,
+    rateUnit: 'PER_BRASS',
   },
   {
     id: 'r2',
     customerName: 'Mauli Builders',
     material: 'Crushed Stone (10mm)',
     rate: 6000,
+    rateUnit: 'PER_BRASS',
   },
   {
     id: 'r3',
     customerName: 'Mauli Builders',
     material: 'Dust',
     rate: 3000,
+    rateUnit: 'PER_BRASS',
   }
 ];
 

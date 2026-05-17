@@ -87,6 +87,8 @@ export async function initDb() {
     customerType TEXT,
     material TEXT,
     brass TEXT,
+    weight TEXT,
+    rateUnit TEXT,
     rate TEXT,
     amount TEXT,
     paidAmount TEXT,
@@ -103,6 +105,8 @@ export async function initDb() {
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS customerType TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS material TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS brass TEXT`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS weight TEXT`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS rateUnit TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS rate TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS paidAmount TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS status TEXT`,
@@ -202,8 +206,13 @@ export async function initDb() {
     id TEXT PRIMARY KEY,
     customerName TEXT,
     material TEXT,
-    rate TEXT
+    rate TEXT,
+    rateUnit TEXT
   )`);
+
+  try {
+    await pool.query(`ALTER TABLE customer_rates ADD COLUMN IF NOT EXISTS rateUnit TEXT`);
+  } catch {}
 
   await pool.query(`CREATE TABLE IF NOT EXISTS khata_clients (
     id TEXT PRIMARY KEY,
@@ -285,6 +294,8 @@ export async function getAppData() {
       customerType: customer.customertype || customer.customerType || 'OTHER',
       material: customer.material || '',
       brass: customer.brass ? parseFloat(customer.brass) : 0,
+      weight: customer.weight ? parseFloat(customer.weight) : 0,
+      rateUnit: customer.rateunit || customer.rateUnit || 'PER_BRASS',
       rate: customer.rate ? parseFloat(customer.rate) : 0,
       amount: customer.amount ? parseFloat(decrypt(customer.amount)) : 0,
       paidAmount: customer.paidamount ? parseFloat(decrypt(customer.paidamount)) : 0,
@@ -328,6 +339,7 @@ export async function getAppData() {
       customerName: entry.customername || '',
       material: entry.material || '',
       rate: entry.rate ? parseFloat(decrypt(entry.rate)) : 0,
+      rateUnit: entry.rateunit || entry.rateUnit || 'PER_BRASS',
     })),
     khataClients: khataClients.rows
       .map((entry: any) => ({
@@ -443,6 +455,8 @@ export async function saveCustomer(payload: any) {
     customerType,
     material,
     brass,
+    weight,
+    rateUnit,
     rate,
     amount,
     paidAmount,
@@ -484,8 +498,8 @@ export async function saveCustomer(payload: any) {
     await pool.query(
       `UPDATE customers
        SET vehicleNumber = $1, customerName = $2, site = $3, customerType = $4, material = $5, brass = $6,
-           rate = $7, amount = $8, paidAmount = $9, status = $10, date = $11, addedBy = $12, addedById = $13
-       WHERE id = $14`,
+           weight = $7, rateUnit = $8, rate = $9, amount = $10, paidAmount = $11, status = $12, date = $13, addedBy = $14, addedById = $15
+       WHERE id = $16`,
       [
         trimmedVehicleNumber,
         resolvedCustomerName,
@@ -493,6 +507,8 @@ export async function saveCustomer(payload: any) {
         customerType || 'OTHER',
         material || '',
         brass || '0',
+        weight || '0',
+        rateUnit || 'PER_BRASS',
         rate || '0',
         encrypt(amount?.toString() || '0'),
         encrypt(paidAmount?.toString() || '0'),
@@ -504,13 +520,13 @@ export async function saveCustomer(payload: any) {
       ]
     );
 
-    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
   }
 
   const newId = Date.now().toString();
   await pool.query(
-    `INSERT INTO customers (id, vehicleNumber, customerName, site, customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    `INSERT INTO customers (id, vehicleNumber, customerName, site, customerType, material, brass, weight, rateUnit, rate, amount, paidAmount, status, date, addedBy, addedById)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
     [
       newId,
       trimmedVehicleNumber,
@@ -519,6 +535,8 @@ export async function saveCustomer(payload: any) {
       customerType || 'OTHER',
       material || '',
       brass || '0',
+      weight || '0',
+      rateUnit || 'PER_BRASS',
       rate || '0',
       encrypt(amount?.toString() || '0'),
       encrypt(paidAmount?.toString() || '0'),
@@ -529,7 +547,7 @@ export async function saveCustomer(payload: any) {
     ]
   );
 
-  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, rate, amount, paidAmount, status, date, addedBy, addedById };
+  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
 }
 
 export async function updateCustomer(id: string, payload: any) {
@@ -638,7 +656,7 @@ export async function saveKhataPayment(payload: any) {
 
 export async function saveCustomerRate(payload: any) {
   await safeInitDb();
-  const { customerName, material, rate } = payload;
+  const { customerName, material, rate, rateUnit } = payload;
 
   if (!customerName || !material) {
     throw new Error('Customer name and material required');
@@ -651,20 +669,20 @@ export async function saveCustomerRate(payload: any) {
 
   if (existing.rows.length > 0) {
     await pool.query(
-      'UPDATE customer_rates SET rate = $1 WHERE customerName = $2 AND material = $3',
-      [rate ? encrypt(String(rate)) : '', customerName, material]
+      'UPDATE customer_rates SET rate = $1, rateUnit = $2 WHERE customerName = $3 AND material = $4',
+      [rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS', customerName, material]
     );
 
-    return { id: existing.rows[0].id, customerName, material, rate: rate || 0 };
+    return { id: existing.rows[0].id, customerName, material, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
   }
 
   const id = Date.now().toString();
   await pool.query(
-    'INSERT INTO customer_rates (id, customerName, material, rate) VALUES ($1, $2, $3, $4)',
-    [id, customerName, material, rate ? encrypt(String(rate)) : '']
+    'INSERT INTO customer_rates (id, customerName, material, rate, rateUnit) VALUES ($1, $2, $3, $4, $5)',
+    [id, customerName, material, rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS']
   );
 
-  return { id, customerName, material, rate: rate || 0 };
+  return { id, customerName, material, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
 }
 
 export async function saveAssistant(payload: any) {

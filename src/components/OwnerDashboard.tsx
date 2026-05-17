@@ -10,7 +10,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend
 } from 'recharts';
-import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient } from '../types';
+import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient, RateUnit } from '../types';
 import { formatCurrency, formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import SettingsContent from './SettingsContent';
@@ -69,6 +69,8 @@ export default function OwnerDashboard({
   const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
   const [brass, setBrass] = useState('');
+  const [weight, setWeight] = useState('');
+  const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
   const [rate, setRate] = useState('');
   const [paidAmount, setPaidAmount] = useState('');
   const [custType, setCustType] = useState<CustomerType>('OTHER');
@@ -90,6 +92,7 @@ export default function OwnerDashboard({
   const [khataCustName, setKhataCustName] = useState('');
   const [khataMaterial, setKhataMaterial] = useState('');
   const [khataRate, setKhataRate] = useState('');
+  const [khataRateUnit, setKhataRateUnit] = useState<RateUnit>('PER_BRASS');
   const [newKhataClientName, setNewKhataClientName] = useState('');
   const [newKhataClientApplyGst, setNewKhataClientApplyGst] = useState(false);
   const [editingKhataClientId, setEditingKhataClientId] = useState<string | null>(null);
@@ -125,6 +128,7 @@ export default function OwnerDashboard({
         customerName: khataCustName,
         material: khataMaterial,
         rate: parseFloat(khataRate) || 0,
+        rateUnit: khataRateUnit,
       };
       (setCustomerRates as any)(updated);
     } else {
@@ -133,6 +137,7 @@ export default function OwnerDashboard({
         customerName: khataCustName,
         material: khataMaterial,
         rate: parseFloat(khataRate) || 0,
+        rateUnit: khataRateUnit,
       };
       (setCustomerRates as any)(newRate);
     }
@@ -141,6 +146,7 @@ export default function OwnerDashboard({
     setKhataCustName('');
     setKhataMaterial('');
     setKhataRate('');
+    setKhataRateUnit('PER_BRASS');
   };
 
   const handleEditKhata = (rate: CustomerRate) => {
@@ -148,6 +154,7 @@ export default function OwnerDashboard({
     setKhataCustName(rate.customerName);
     setKhataMaterial(rate.material);
     setKhataRate(rate.rate.toString());
+    setKhataRateUnit(rate.rateUnit || 'PER_BRASS');
     setIsKhataModalOpen(true);
   };
 
@@ -163,18 +170,44 @@ export default function OwnerDashboard({
         client.applyGst
     );
 
-  const getRegularRate = (customerName: string, materialName: string, fallbackRate = 0) => {
+  const calculateAmountByUnit = (unit: RateUnit, rateValue: number, brassValue: number, weightValue: number) => {
+    const quantity = unit === 'PER_WEIGHT' ? weightValue : brassValue;
+    return quantity * rateValue;
+  };
+
+  const formatRateUnit = (unit: RateUnit) => (unit === 'PER_WEIGHT' ? 'per weight' : 'per brass');
+
+  const getQuantityByUnit = (unit: RateUnit, brassValue: number, weightValue: number) =>
+    unit === 'PER_WEIGHT' ? weightValue : brassValue;
+
+  const getRegularRateConfig = (
+    customerName: string,
+    materialName: string,
+    fallbackRate = 0,
+    fallbackRateUnit: RateUnit = 'PER_BRASS'
+  ) => {
     const rateRec = state.customerRates.find(
       r =>
         r.customerName.trim().toUpperCase() === customerName.trim().toUpperCase() &&
         r.material.trim().toUpperCase() === materialName.trim().toUpperCase()
     );
 
-    return rateRec?.rate || fallbackRate || 0;
+    return {
+      rate: rateRec?.rate || fallbackRate || 0,
+      rateUnit: rateRec?.rateUnit || fallbackRateUnit,
+    };
   };
 
-  const calculateRegularAmount = (customerName: string, materialName: string, brassValue: number) => {
-    const baseAmount = brassValue * getRegularRate(customerName, materialName);
+  const calculateRegularAmount = (
+    customerName: string,
+    materialName: string,
+    brassValue: number,
+    weightValue = 0,
+    fallbackRate = 0,
+    fallbackRateUnit: RateUnit = 'PER_BRASS'
+  ) => {
+    const rateConfig = getRegularRateConfig(customerName, materialName, fallbackRate, fallbackRateUnit);
+    const baseAmount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, brassValue, weightValue);
     return shouldApplyGst(customerName) ? baseAmount * 1.05 : baseAmount;
   };
 
@@ -201,23 +234,31 @@ export default function OwnerDashboard({
 
     const groupedItems = clientTransactions.reduce((acc, customer) => {
       const key = customer.material.trim().toUpperCase();
-      const rateForMaterial = getRegularRate(customer.customerName, customer.material, customer.rate);
+      const rateConfig = getRegularRateConfig(
+        customer.customerName,
+        customer.material,
+        customer.rate,
+        customer.rateUnit || 'PER_BRASS'
+      );
       const existing = acc.get(key);
+      const quantity = getQuantityByUnit(rateConfig.rateUnit, customer.brass, customer.weight || 0);
+      const amount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, customer.brass, customer.weight || 0);
 
       if (existing) {
-        existing.totalBrass += customer.brass;
-        existing.amount += customer.brass * rateForMaterial;
+        existing.totalQuantity += quantity;
+        existing.amount += amount;
       } else {
         acc.set(key, {
           material: customer.material,
-          totalBrass: customer.brass,
-          rate: rateForMaterial,
-          amount: customer.brass * rateForMaterial,
+          totalQuantity: quantity,
+          rate: rateConfig.rate,
+          rateUnit: rateConfig.rateUnit,
+          amount,
         });
       }
 
       return acc;
-    }, new Map<string, { material: string; totalBrass: number; rate: number; amount: number }>());
+    }, new Map<string, { material: string; totalQuantity: number; rate: number; rateUnit: RateUnit; amount: number }>());
 
     const items = Array.from(groupedItems.values()).sort((a, b) => a.material.localeCompare(b.material));
     const subTotal = items.reduce((sum, item) => sum + item.amount, 0);
@@ -228,7 +269,7 @@ export default function OwnerDashboard({
       month: 'short',
       year: 'numeric',
     });
-    const totalBrass = items.reduce((sum, item) => sum + item.totalBrass, 0);
+    const totalBrass = clientTransactions.reduce((sum, item) => sum + item.brass, 0);
     const ownerName = state.ownerProfile?.name || 'Nilesh Karande';
     const ownerPhone = state.ownerProfile?.phone || '9370763003';
     const logoUrl = `${window.location.origin}/shri-mauli-logo.png`;
@@ -244,8 +285,8 @@ export default function OwnerDashboard({
         item => `
           <tr>
             <td>${escapeHtml(item.material)}</td>
-            <td class="num">${item.totalBrass.toFixed(2)}</td>
-            <td class="num">${item.rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+            <td class="num">${item.totalQuantity.toFixed(2)}</td>
+            <td class="num">${item.rate.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / ${item.rateUnit === 'PER_WEIGHT' ? 'weight' : 'brass'}</td>
             <td class="num">${item.amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
           </tr>
         `
@@ -649,6 +690,7 @@ export default function OwnerDashboard({
     );
     if (match && match.rate > 0) {
       setRate(match.rate.toString());
+      setRateUnit(match.rateUnit || 'PER_BRASS');
     }
   };
 
@@ -678,16 +720,18 @@ export default function OwnerDashboard({
         customer.id !== editingId
     );
     const resolvedCustomerName = matchedCustomer?.customerName?.trim() || custName.trim();
-    const rateNum = custType === 'REGULAR' ? 0 : (isNaN(parseFloat(rate)) ? 0 : parseFloat(rate));
+    const rateNum = isNaN(parseFloat(rate)) ? 0 : parseFloat(rate);
     const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
+    const weightNum = isNaN(parseFloat(weight)) ? 0 : parseFloat(weight);
+    const regularRateConfig = getRegularRateConfig(resolvedCustomerName, material, rateNum, rateUnit);
     const totalAmount = custType === 'REGULAR'
-      ? calculateRegularAmount(resolvedCustomerName, material, brassNum)
-      : brassNum * rateNum;
+      ? calculateRegularAmount(resolvedCustomerName, material, brassNum, weightNum, rateNum, rateUnit)
+      : calculateAmountByUnit(rateUnit, rateNum, brassNum, weightNum);
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
       // For edit - sync to backend with updateFlag
-      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, brass: brassNum, rate: rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
+      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, brass: brassNum, weight: weightNum, rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit, rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
       const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
@@ -697,8 +741,10 @@ export default function OwnerDashboard({
         site: site.trim(),
         customerType: custType,
         material: material,
-        brass: parseFloat(brass),
-        rate: custType === 'REGULAR' ? 0 : parseFloat(rate),
+        brass: brassNum,
+        weight: weightNum,
+        rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit,
+        rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum,
         amount: totalAmount,
         paidAmount: paid,
         status: paid >= totalAmount ? 'PAID' : 'PENDING',
@@ -714,7 +760,7 @@ export default function OwnerDashboard({
         (setKhataClients as any)({ name: resolvedCustomerName, applyGst: false });
         // Always create rate entry for the material (rate can be 0)
         if ((material || '').trim()) {
-          (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: parseFloat(rate) || 0 });
+          (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: rateNum, rateUnit });
         }
       }
     }
@@ -726,6 +772,8 @@ export default function OwnerDashboard({
     setSite('');
     setMaterial('');
     setBrass('');
+    setWeight('');
+    setRateUnit('PER_BRASS');
     setRate('');
     setPaidAmount('');
   };
@@ -737,6 +785,8 @@ export default function OwnerDashboard({
     setSite(customer.site || '');
     setMaterial(customer.material);
     setBrass(customer.brass.toString());
+    setWeight((customer.weight || 0).toString());
+    setRateUnit(customer.rateUnit || 'PER_BRASS');
     setRate(customer.rate.toString());
     setPaidAmount(customer.paidAmount.toString());
     setCustType(customer.customerType);
@@ -833,7 +883,7 @@ export default function OwnerDashboard({
   const stats = useMemo(() => {
     const getAmount = (c: any) => {
       if (c.customerType === 'REGULAR') {
-        return calculateRegularAmount(c.customerName, c.material, c.brass);
+        return calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS');
       }
       return c.amount;
     };
@@ -868,7 +918,7 @@ export default function OwnerDashboard({
       if (dailyMap[date]) {
         let amt = c.amount;
         if (c.customerType === 'REGULAR') {
-          amt = calculateRegularAmount(c.customerName, c.material, c.brass);
+          amt = calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS');
         }
         dailyMap[date].income += amt;
       }
@@ -1071,7 +1121,9 @@ export default function OwnerDashboard({
               <th className="px-6 py-4">Customer Entity</th>
               <th className="px-6 py-4">Site</th>
               <th className="px-6 py-4">Material Specification</th>
-              <th className="px-6 py-4">Quantity (Brass)</th>
+              <th className="px-6 py-4">Brass</th>
+              <th className="px-6 py-4">Weight</th>
+              <th className="px-6 py-4">Rate Unit</th>
               <th className="px-6 py-4">Rate (₹)</th>
               <th className="px-6 py-4">Total (₹)</th>
               <th className="px-6 py-4">Paid (₹)</th>
@@ -1099,13 +1151,13 @@ export default function OwnerDashboard({
                 <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{customer.site || '-'}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main">{customer.material}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.brass} <span className="text-text-muted font-normal uppercase tracking-tighter">BRS</span></td>
-                <td className="px-6 py-4 text-xs font-bold text-text-muted">{customer.customerType === 'REGULAR' ? '-' : formatCurrency(customer.rate)}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.weight || 0}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-muted uppercase">{formatRateUnit(customer.rateUnit || 'PER_BRASS')}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatCurrency(customer.rate)}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">
-                  {customer.customerType === 'REGULAR' ? (
-                    (() => {
-                      return formatCurrency(calculateRegularAmount(customer.customerName, customer.material, customer.brass));
-                    })()
-                  ) : formatCurrency(customer.amount)}
+                    {customer.customerType === 'REGULAR'
+                      ? formatCurrency(calculateRegularAmount(customer.customerName, customer.material, customer.brass, customer.weight || 0, customer.rate, customer.rateUnit || 'PER_BRASS'))
+                      : formatCurrency(customer.amount)}
                 </td>
                 <td className="px-6 py-4 text-xs font-bold text-success">
                   {customer.customerType === 'REGULAR' ? '-' : formatCurrency(customer.paidAmount)}
@@ -1368,7 +1420,7 @@ export default function OwnerDashboard({
     
     const getAmount = (c: any) => {
       return c.customerType === 'REGULAR'
-        ? calculateRegularAmount(c.customerName, c.material, c.brass)
+        ? calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS')
         : c.amount;
     };
     
@@ -1563,7 +1615,7 @@ export default function OwnerDashboard({
                         <thead>
                           <tr className="bg-bg-surface/30 border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
                             <th className="px-6 py-4 font-black">Material Type</th>
-                            <th className="px-6 py-4 font-black">Contract Rate (₹)</th>
+                            <th className="px-6 py-4 font-black">Contract Rate</th>
                             <th className="px-6 py-4 text-right">Actions</th>
                           </tr>
                         </thead>
@@ -1579,7 +1631,7 @@ export default function OwnerDashboard({
                                 <div className="flex items-center text-primary font-black text-sm whitespace-nowrap">
                                   <IndianRupee className="h-3.5 w-3.5 mr-1" />
                                   {rate.rate.toLocaleString()}
-                                  <span className="ml-1.5 text-[9px] text-text-muted font-bold opacity-60">/ BRS</span>
+                                  <span className="ml-1.5 text-[9px] text-text-muted font-bold opacity-60">/ {rate.rateUnit === 'PER_WEIGHT' ? 'WEIGHT' : 'BRS'}</span>
                                 </div>
                               </td>
                               <td className="px-6 py-4 text-right">
@@ -1972,9 +2024,17 @@ export default function OwnerDashboard({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Quantity (Brass)</label>
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Brass Quantity</label>
               <input 
                 type="number" step="0.01" required value={brass} onChange={e => setBrass(e.target.value)}
+                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
+              <input 
+                type="number" step="0.01" required value={weight} onChange={e => setWeight(e.target.value)}
                 className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
                 placeholder="0.00"
               />
@@ -1992,6 +2052,19 @@ export default function OwnerDashboard({
           </div>
           {custType !== 'REGULAR' && (
             <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Rate Unit</label>
+              <select
+                value={rateUnit}
+                onChange={e => setRateUnit(e.target.value as RateUnit)}
+                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
+              >
+                <option value="PER_BRASS">Per Brass</option>
+                <option value="PER_WEIGHT">Per Weight</option>
+              </select>
+            </div>
+          )}
+          {custType !== 'REGULAR' && (
+            <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest text-primary">Amount Paid (₹)</label>
               <input 
                 type="number" required value={paidAmount} onChange={e => setPaidAmount(e.target.value)}
@@ -2006,8 +2079,8 @@ export default function OwnerDashboard({
               <span className="text-sm font-black text-text-main">
                 ₹{(
                   custType === 'REGULAR'
-                    ? calculateRegularAmount(custName, material, parseFloat(brass) || 0)
-                    : (parseFloat(brass) || 0) * (parseFloat(rate) || 0)
+                    ? calculateRegularAmount(custName, material, parseFloat(brass) || 0, parseFloat(weight) || 0, parseFloat(rate) || 0, rateUnit)
+                    : calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0)
                 ).toLocaleString()}
               </span>
             </div>
@@ -2015,7 +2088,7 @@ export default function OwnerDashboard({
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-bold text-text-muted uppercase">Balance Remaining</span>
                 <span className="text-sm font-black text-danger">
-                  ₹{(((parseFloat(brass) || 0) * (parseFloat(rate) || 0)) - (parseFloat(paidAmount) || 0)).toLocaleString()}
+                  ₹{((calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0) - (parseFloat(paidAmount) || 0))).toLocaleString()}
                 </span>
               </div>
             )}
@@ -2208,6 +2281,17 @@ export default function OwnerDashboard({
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
               placeholder="e.g. 20mm aggregate"
             />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Rate Unit</label>
+            <select
+              value={khataRateUnit}
+              onChange={e => setKhataRateUnit(e.target.value as RateUnit)}
+              className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
+            >
+              <option value="PER_BRASS">Per Brass</option>
+              <option value="PER_WEIGHT">Per Weight</option>
+            </select>
           </div>
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Fixed Rate (₹ Per Brass)</label>

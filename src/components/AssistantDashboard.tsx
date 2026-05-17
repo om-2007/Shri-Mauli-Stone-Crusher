@@ -4,7 +4,7 @@ import {
   Plus, ReceiptText, Wrench, Search, IndianRupee,
   MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2, Clock
 } from 'lucide-react';
-import { AppState, CustomerEntry, MaintenanceEntry, CustomerType } from '../types';
+import { AppState, CustomerEntry, MaintenanceEntry, CustomerType, RateUnit } from '../types';
 import { formatDate, cn, normalizeVehicleNumber } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
@@ -87,6 +87,8 @@ export default function AssistantDashboard({
   const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
   const [brass, setBrass] = useState('');
+  const [weight, setWeight] = useState('');
+  const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
   const [asstRate, setAsstRate] = useState('');
 
   const uniqueKhataCustomers = useMemo(() => 
@@ -152,6 +154,7 @@ export default function AssistantDashboard({
         );
         if (match) {
           finalRate = match.rate;
+          setRateUnit(match.rateUnit || 'PER_BRASS');
         }
       }
     } else {
@@ -168,9 +171,11 @@ export default function AssistantDashboard({
       customerType: custType,
       material: material,
       brass: parseFloat(brass),
+      weight: parseFloat(weight) || 0,
+      rateUnit,
       rate: finalRate,
       amount: (() => {
-        const baseAmount = parseFloat(brass) * finalRate;
+        const baseAmount = (rateUnit === 'PER_WEIGHT' ? (parseFloat(weight) || 0) : parseFloat(brass)) * finalRate;
         const clientConfig = state.khataClients.find(
           client => client.name.trim().toUpperCase() === resolvedCustomerName.toUpperCase()
         );
@@ -189,6 +194,8 @@ export default function AssistantDashboard({
     setSite('');
     setMaterial('');
     setBrass('');
+    setWeight('');
+    setRateUnit('PER_BRASS');
     setAsstRate('');
   };
 
@@ -510,6 +517,29 @@ export default function AssistantDashboard({
                 placeholder="0.00"
               />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
+              <input 
+                type="number" step="0.01" required value={weight} onChange={e => setWeight(e.target.value)}
+                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold"
+                placeholder="0.00"
+              />
+            </div>
+            {custType === 'OTHER' && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Rate Unit</label>
+                <select
+                  value={rateUnit}
+                  onChange={e => setRateUnit(e.target.value as RateUnit)}
+                  className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
+                >
+                  <option value="PER_BRASS">Per Brass</option>
+                  <option value="PER_WEIGHT">Per Weight</option>
+                </select>
+              </div>
+            )}
           </div>
 
           {custType === 'OTHER' && (
