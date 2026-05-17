@@ -168,7 +168,9 @@ export default function App() {
     refreshData('Initial data fetch')
       .then(() => setLoading(false))
       .catch(err => {
-        console.error('Failed to fetch data', err);
+        if (!(err instanceof Error && err.name === 'AbortError')) {
+          console.error('Failed to fetch data', err);
+        }
         setOwnerProfile(DEFAULT_OWNER);
         setSetupError(
           err instanceof Error && err.name === 'AbortError'

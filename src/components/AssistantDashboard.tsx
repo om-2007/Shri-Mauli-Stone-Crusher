@@ -512,7 +512,7 @@ export default function AssistantDashboard({
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Quantity (BRS)</label>
               <input 
-                type="number" step="0.01" required value={brass} onChange={e => setBrass(e.target.value)}
+                type="number" step="0.01" value={brass} onChange={e => setBrass(e.target.value)}
                 className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold"
                 placeholder="0.00"
               />
@@ -522,7 +522,7 @@ export default function AssistantDashboard({
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
               <input 
-                type="number" step="0.01" required value={weight} onChange={e => setWeight(e.target.value)}
+                type="number" step="0.01" value={weight} onChange={e => setWeight(e.target.value)}
                 className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold"
                 placeholder="0.00"
               />
