@@ -57,6 +57,9 @@ export async function GET(_request: Request, context: RouteContext) {
 
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   } catch (error) {
+    if (segments.length === 1 && segments[0] === 'system-state') {
+      return NextResponse.json({ isDayStarted: false, degraded: true }, { status: 200 });
+    }
     return errorResponse(error, 'Database error');
   }
 }

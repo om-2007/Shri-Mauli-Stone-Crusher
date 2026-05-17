@@ -19,6 +19,8 @@ function createPool() {
     connectionString: getDatabaseUrl(),
     max: 5,
     connectionTimeoutMillis: 8000,
+    query_timeout: 8000,
+    statement_timeout: 8000,
     idleTimeoutMillis: 30000,
     allowExitOnIdle: true,
     ssl: {

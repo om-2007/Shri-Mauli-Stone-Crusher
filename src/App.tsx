@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useTransition } from 'react';
 import { User, AppState, UserRole, CustomerRate, KhataClient } from './types';
 // Removed mock imports to lean purely on database
 import LoginPage from './components/LoginPage';
@@ -51,6 +51,9 @@ export default function App() {
   const [isDayStarted, setIsDayStarted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState('');
+  const [isBackgroundSyncing, startBackgroundSyncTransition] = useTransition();
+  const refreshPromiseRef = useRef<Promise<any> | null>(null);
+  const queuedRefreshLabelRef = useRef<string | null>(null);
 
   const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 12000) => {
     const controller = new AbortController();
@@ -83,39 +86,72 @@ export default function App() {
   };
 
   const applyServerData = (data: any) => {
-    setCustomers(data.customers || []);
-    setMaintenance(data.maintenance || []);
-    setSalaries(data.salaries || []);
-    setKhataPayments(data.khataPayments || []);
-    setAssistants(data.assistants || []);
-    setCustomerRates(data.customerRates || []);
-    setKhataClients(data.khataClients || []);
-    setOwnerProfile(data.ownerProfile || DEFAULT_OWNER);
-    setSetupError('');
-    setNotificationSettings(data.notificationSettings || {
-      enableKhataReminders: true,
-      enableMaintenanceAlerts: true,
-    });
-    setIsDayStarted(data.isDayStarted || false);
+    startBackgroundSyncTransition(() => {
+      setCustomers(data.customers || []);
+      setMaintenance(data.maintenance || []);
+      setSalaries(data.salaries || []);
+      setKhataPayments(data.khataPayments || []);
+      setAssistants(data.assistants || []);
+      setCustomerRates(data.customerRates || []);
+      setKhataClients(data.khataClients || []);
+      setOwnerProfile(data.ownerProfile || DEFAULT_OWNER);
+      setSetupError('');
+      setNotificationSettings(data.notificationSettings || {
+        enableKhataReminders: true,
+        enableMaintenanceAlerts: true,
+      });
+      setIsDayStarted(data.isDayStarted || false);
 
-    const saved = localStorage.getItem('currentUser');
-    if (saved) {
-      try {
-        const user = JSON.parse(saved);
-        if (user.role === 'OWNER' && data.ownerProfile) {
-          setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
+      const saved = localStorage.getItem('currentUser');
+      if (saved) {
+        try {
+          const user = JSON.parse(saved);
+          if (user.role === 'OWNER' && data.ownerProfile) {
+            setCurrentUser({ ...data.ownerProfile, role: 'OWNER' });
+          }
+        } catch (error) {
+          console.error('Failed to refresh saved user', error);
         }
-      } catch (error) {
-        console.error('Failed to refresh saved user', error);
       }
-    }
+    });
   };
 
-  const refreshData = async (label: string) => {
+  const runRefreshData = async (label: string) => {
     const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 12000);
     const data = await parseJsonResponse(res, label);
     applyServerData(data);
     return data;
+  };
+
+  const refreshData = async (label: string) => {
+    if (refreshPromiseRef.current) {
+      queuedRefreshLabelRef.current = label;
+      return refreshPromiseRef.current;
+    }
+
+    const request = runRefreshData(label)
+      .finally(async () => {
+        refreshPromiseRef.current = null;
+        const queuedLabel = queuedRefreshLabelRef.current;
+        queuedRefreshLabelRef.current = null;
+
+        if (queuedLabel) {
+          try {
+            await refreshData(queuedLabel);
+          } catch (error) {
+            console.error('Queued refresh failed', error);
+          }
+        }
+      });
+
+    refreshPromiseRef.current = request;
+    return request;
+  };
+
+  const queueRefresh = (label: string) => {
+    void refreshData(label).catch(error => {
+      console.error(`${label} failed`, error);
+    });
   };
 
   // Persistence effect for session
@@ -147,6 +183,10 @@ export default function App() {
 
   // Poll day status every 60 seconds to sync with automatic start/end
   useEffect(() => {
+    if (loading || setupError) {
+      return;
+    }
+
     const pollDayStatus = async () => {
       try {
         const res = await fetchWithTimeout('/api/system-state', undefined, 8000);
@@ -155,12 +195,14 @@ export default function App() {
           setIsDayStarted(data.isDayStarted);
         }
       } catch (e) {
-        console.error('Failed to poll day status', e);
+        if (!(e instanceof Error && e.name === 'AbortError')) {
+          console.error('Failed to poll day status', e);
+        }
       }
     };
     const interval = setInterval(pollDayStatus, 60000);
     return () => clearInterval(interval);
-  }, [isDayStarted]);
+  }, [isDayStarted, loading, setupError]);
 
   const syncDayStatus = async (status: boolean) => {
     try {
@@ -171,7 +213,7 @@ export default function App() {
       });
       if (res.ok) {
         setIsDayStarted(status);
-        await refreshData('Day status refresh');
+        queueRefresh('Day status refresh');
       }
     } catch (e) {
       console.error('Failed to sync day status', e);
@@ -194,7 +236,7 @@ export default function App() {
         if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
         if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c.id !== id));
-        await refreshData(`Refresh after deleting ${collection}`);
+        queueRefresh(`Refresh after deleting ${collection}`);
       }
     } catch (e) {
       console.error('Failed to delete record', e);
@@ -215,7 +257,7 @@ export default function App() {
         } else {
           setAssistants(prev => prev.map(a => a.id === userData.id ? { ...a, name: userData.name, phone: userData.phone } : a));
         }
-        await refreshData('Profile refresh');
+        queueRefresh('Profile refresh');
       }
     } catch (e) {
       console.error('Failed to sync profile', e);
@@ -231,7 +273,7 @@ export default function App() {
       });
       if (!res.ok) return;
       setNotificationSettings(settings);
-      await refreshData('Notification settings refresh');
+      queueRefresh('Notification settings refresh');
     } catch (e) {
       console.error('Failed to sync settings', e);
     }
@@ -263,7 +305,7 @@ const syncCustomer = async (data: any) => {
           return [stored, ...prev];
         });
       }
-      await refreshData('Customer refresh');
+      queueRefresh('Customer refresh');
     } catch (e) {
       console.error('Failed to sync customer', e);
     }
@@ -283,7 +325,7 @@ const syncCustomer = async (data: any) => {
         if (prev.some(m => m.id === stored.id)) return prev;
         return [stored, ...prev];
       });
-      await refreshData('Maintenance refresh');
+      queueRefresh('Maintenance refresh');
     } catch (e) {
       console.error('Failed to sync maintenance', e);
     }
@@ -303,7 +345,7 @@ const syncCustomer = async (data: any) => {
         if (prev.some(s => s.id === stored.id)) return prev;
         return [stored, ...prev];
       });
-      await refreshData('Salary refresh');
+      queueRefresh('Salary refresh');
     } catch (e) {
       console.error('Failed to sync salary', e);
     }
@@ -332,7 +374,7 @@ const syncKhataPayment = async (data: any) => {
         if (prev.some((p: any) => p.id === stored.id)) return prev;
         return [stored, ...prev];
       });
-      await refreshData('Khata payment refresh');
+      queueRefresh('Khata payment refresh');
     } catch (e) {
       console.error('Failed to sync khata payment', e);
     }
@@ -357,7 +399,7 @@ const syncKhataPayment = async (data: any) => {
         }
         return [stored, ...prev];
       });
-      await refreshData('Customer rate refresh');
+      queueRefresh('Customer rate refresh');
     } catch (e) {
       console.error('Failed to sync customer rate', e);
     }
@@ -377,7 +419,7 @@ const syncKhataPayment = async (data: any) => {
         if (prev.some(a => a.id === stored.id)) return prev;
         return [...prev, stored];
       });
-      await refreshData('Assistant refresh');
+      queueRefresh('Assistant refresh');
     } catch (e) {
       console.error('Failed to sync assistant', e);
     }
@@ -410,7 +452,7 @@ const syncKhataPayment = async (data: any) => {
         }
         return [...prev, stored];
       });
-      await refreshData('Khata client refresh');
+      queueRefresh('Khata client refresh');
     } catch (e) {
       console.error('Failed to sync khata client', e);
     }
@@ -593,41 +635,48 @@ const syncKhataPayment = async (data: any) => {
     (currentUser.role === 'ASSISTANT' && activeTab !== 'dashboard' && activeTab !== 'salaries');
 
   return (
-    <Layout 
-      user={currentUser} 
-      onLogout={handleLogout}
-      activeTab={activeTab}
-      setActiveTab={setActiveTab}
-      notifications={notifications}
-      markNotificationAsRead={markNotificationAsRead}
-    >
-      {shouldUseOwnerDashboard ? (
-        <OwnerDashboard 
-          state={appState} 
-          setIsDayStarted={syncDayStatus}
-          activeTab={activeTab}
-          setCustomers={syncCustomer as any}
-          setMaintenance={syncMaintenance as any}
-          setSalaries={syncSalary as any}
-          setAssistants={syncAssistant as any}
-          setCustomerRates={syncCustomerRate as any}
-          setKhataClients={syncKhataClient as any}
-          setKhataPayments={syncKhataPayment as any}
-          setNotificationSettings={setNotificationSettings}
-          deleteRecord={deleteRecord}
-          syncProfile={syncProfile}
-        />
-      ) : (
-        <AssistantDashboard 
-          state={appState} 
-          activeTab={activeTab}
-          setIsDayStarted={syncDayStatus}
-          setCustomers={syncCustomer as any} 
-          setMaintenance={syncMaintenance as any}
-          deleteRecord={deleteRecord}
-          syncProfile={syncProfile}
-        />
+    <>
+      {isBackgroundSyncing && (
+        <div className="fixed right-4 top-4 z-[70] rounded-full border border-border-subtle bg-white/95 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-text-muted shadow-lg backdrop-blur">
+          Syncing Data
+        </div>
       )}
-    </Layout>
+      <Layout 
+        user={currentUser} 
+        onLogout={handleLogout}
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        notifications={notifications}
+        markNotificationAsRead={markNotificationAsRead}
+      >
+        {shouldUseOwnerDashboard ? (
+          <OwnerDashboard 
+            state={appState} 
+            setIsDayStarted={syncDayStatus}
+            activeTab={activeTab}
+            setCustomers={syncCustomer as any}
+            setMaintenance={syncMaintenance as any}
+            setSalaries={syncSalary as any}
+            setAssistants={syncAssistant as any}
+            setCustomerRates={syncCustomerRate as any}
+            setKhataClients={syncKhataClient as any}
+            setKhataPayments={syncKhataPayment as any}
+            setNotificationSettings={setNotificationSettings}
+            deleteRecord={deleteRecord}
+            syncProfile={syncProfile}
+          />
+        ) : (
+          <AssistantDashboard 
+            state={appState}
+            activeTab={activeTab}
+            setIsDayStarted={syncDayStatus}
+            setCustomers={syncCustomer as any} 
+            setMaintenance={syncMaintenance as any}
+            deleteRecord={deleteRecord}
+            syncProfile={syncProfile}
+          />
+        )}
+      </Layout>
+    </>
   );
 }
