@@ -487,7 +487,7 @@ export async function saveCustomer(payload: any) {
         (customer.customername || customer.customerName || '').trim()
     );
 
-    if (matchedCustomer) {
+    if (matchedCustomer && !id) {
       resolvedCustomerName = (matchedCustomer.customername || matchedCustomer.customerName || '').trim();
     }
   }
