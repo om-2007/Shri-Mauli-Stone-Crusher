@@ -80,25 +80,6 @@ export async function GET(_request: Request, context: RouteContext) {
   }
 }
 
-    if (segments.length === 1 && segments[0] === 'system-state') {
-      return NextResponse.json(await getSystemState());
-    }
-
-    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'day-status') {
-      await safeInitDb();
-      await autoUpdateDayStatus();
-      return NextResponse.json({ success: true });
-    }
-
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
-  } catch (error) {
-    if (segments.length === 1 && segments[0] === 'system-state') {
-      return NextResponse.json({ isDayStarted: false, degraded: true }, { status: 200 });
-    }
-    return errorResponse(error, 'Database error');
-  }
-}
-
 export async function POST(request: Request, context: RouteContext) {
   const segments = await getSegments(context);
 
