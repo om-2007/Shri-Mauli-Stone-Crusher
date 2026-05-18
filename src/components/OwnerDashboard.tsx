@@ -247,8 +247,8 @@ export default function OwnerDashboard({
         customer.rateUnit || 'PER_BRASS'
       );
       const existing = acc.get(key);
-      const quantity = getQuantityByUnit(rateConfig.rateUnit, customer.brass, customer.weight || 0);
-      const amount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, customer.brass, customer.weight || 0);
+      const quantity = getQuantityByUnit(rateConfig.rateUnit, customer.brass, customer.weight || 0, customer.trips || 1);
+      const amount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, customer.brass, customer.weight || 0, customer.trips || 1);
 
       if (existing) {
         existing.totalQuantity += quantity;
