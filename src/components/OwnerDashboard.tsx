@@ -1139,7 +1139,7 @@ export default function OwnerDashboard({
         </div>
       </div>
       <div className="overflow-x-auto">
-        <div className="inline-block min-w-full align-middle">
+        <div className="hidden lg:inline-block lg:min-w-full lg:align-middle">
           <table className="min-w-[1000px] w-full text-left">
           <thead>
             <tr className="bg-bg-surface border-b-2 border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
@@ -1235,6 +1235,69 @@ export default function OwnerDashboard({
           </tbody>
         </table>
         </div>
+        <div className="lg:hidden space-y-3">
+          {filteredCustomers.map((customer) => {
+            const totalAmount = customer.customerType === 'REGULAR'
+              ? calculateRegularAmount(customer.customerName, customer.material, customer.brass, customer.weight || 0, customer.trips || 1, customer.rate, customer.rateUnit || 'PER_BRASS')
+              : customer.amount;
+            const balance = customer.customerType === 'REGULAR' ? 0 : customer.amount - customer.paidAmount;
+            return (
+              <div key={customer.id} className="bg-bg-surface rounded-xl border border-border-subtle p-4 space-y-2">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-sm font-bold text-text-main uppercase">{customer.customerName}</span>
+                    <span className="text-[10px] text-text-muted uppercase tracking-tight font-bold ml-2">{customer.customerType} CLIENT</span>
+                  </div>
+                  <span className={cn(
+                    "inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide",
+                    customer.customerType === 'REGULAR'
+                      ? "bg-primary/10 text-primary"
+                      : customer.status === 'PAID' 
+                        ? "bg-success/10 text-success" 
+                        : "bg-warning/10 text-warning"
+                  )}>
+                    {customer.customerType === 'REGULAR' ? 'KHATA' : customer.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-text-muted">Vehicle: <span className="text-text-main font-medium uppercase">{customer.vehicleNumber}</span></div>
+                  <div className="text-text-muted">Material: <span className="text-text-main font-medium">{customer.material}</span></div>
+                  <div className="text-text-muted">Site: <span className="text-text-main font-medium uppercase">{customer.site || '-'}</span></div>
+                  <div className="text-text-muted">Date: <span className="text-text-main font-medium">{formatDate(customer.date)}</span></div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="bg-bg-main rounded-lg p-2">
+                    <div className="text-[10px] text-text-muted uppercase">Trips</div>
+                    <div className="text-sm font-bold text-text-main">{customer.trips || 1}</div>
+                  </div>
+                  <div className="bg-bg-main rounded-lg p-2">
+                    <div className="text-[10px] text-text-muted uppercase">Brass</div>
+                    <div className="text-sm font-bold text-text-main">{customer.brass}</div>
+                  </div>
+                  <div className="bg-bg-main rounded-lg p-2">
+                    <div className="text-[10px] text-text-muted uppercase">Total</div>
+                    <div className="text-sm font-bold text-text-main">₹{totalAmount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-bg-main rounded-lg p-2">
+                    <div className="text-[10px] text-text-muted uppercase">Balance</div>
+                    <div className="text-sm font-bold text-danger">₹{balance.toLocaleString()}</div>
+                  </div>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-border-subtle">
+                  <span className="text-[10px] text-text-muted uppercase">{customer.addedBy}</span>
+                  <div className="flex space-x-3">
+                    <button onClick={() => handleEditCustomer(customer)} className="text-primary hover:text-primary-dark">
+                      <Settings className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => deleteRecord('customers', customer.id)} className="text-danger hover:text-danger/80">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1268,7 +1331,7 @@ export default function OwnerDashboard({
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-xl border border-border-subtle shadow-sm overflow-hidden overflow-x-auto">
-          <div className="inline-block min-w-full align-middle">
+          <div className="hidden lg:inline-block lg:min-w-full lg:align-middle">
             <table className="min-w-[600px] w-full text-left">
             <thead>
               <tr className="bg-bg-surface border-b-2 border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
@@ -1302,6 +1365,28 @@ export default function OwnerDashboard({
               ))}
             </tbody>
             </table>
+          </div>
+          <div className="lg:hidden space-y-3 p-4">
+            {filteredSalaries.map((salary) => (
+              <div key={salary.id} className="bg-bg-surface rounded-xl border border-border-subtle p-4">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <span className="text-sm font-bold text-text-main uppercase">{salary.workerName}</span>
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider ml-2">{salary.role}</span>
+                  </div>
+                  <button onClick={() => deleteRecord('salaries', salary.id)} className="text-danger hover:text-danger/80">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-text-muted">Month: <span className="text-text-main font-semibold uppercase">{salary.month}</span></div>
+                  <div className="text-text-muted">Paid On: <span className="text-text-main font-medium">{formatDate(salary.date)}</span></div>
+                </div>
+                <div className="mt-3 pt-2 border-t border-border-subtle text-right">
+                  <span className="text-lg font-bold text-primary">{formatCurrency(salary.amount)}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         
@@ -1996,7 +2081,7 @@ export default function OwnerDashboard({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Type</label>
               <select 
@@ -2064,7 +2149,7 @@ export default function OwnerDashboard({
               ))}
             </datalist>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Trips</label>
               <input 
@@ -2082,7 +2167,7 @@ export default function OwnerDashboard({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
               <input 
@@ -2168,7 +2253,7 @@ export default function OwnerDashboard({
               placeholder="e.g. Ganpat Rao"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Designation/Role</label>
               <input 

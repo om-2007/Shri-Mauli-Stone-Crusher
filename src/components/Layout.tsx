@@ -138,7 +138,7 @@ export default function Layout({
                         initial={{ opacity: 0, y: 10, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        className="absolute right-0 mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-border-subtle z-10 overflow-hidden"
+                        className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-2xl border border-border-subtle z-10 overflow-hidden"
                       >
                         <div className="p-4 border-b border-border-subtle bg-bg-surface flex items-center justify-between">
                           <h3 className="text-xs font-black uppercase tracking-widest text-text-main">Notifications</h3>

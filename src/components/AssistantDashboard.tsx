@@ -262,34 +262,55 @@ export default function AssistantDashboard({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left">
-          <thead>
-            <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
-              <th className="px-6 py-4">Date</th>
-              <th className="px-6 py-4">Vehicle</th>
-              <th className="px-6 py-4">Site</th>
-              <th className="px-6 py-4">Material</th>
-              <th className="px-6 py-4">Trips</th>
-              <th className="px-6 py-4">Brass</th>
-              <th className="px-6 py-4 text-center">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border-subtle">
-            {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
-              <tr key={c.id}>
-                <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
-                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
-                <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{c.site || '-'}</td>
-                <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
-                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.trips || 1}</td>
-                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
-                <td className="px-6 py-4 text-center">
-                  <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
-                </td>
+        <div className="hidden md:block">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-bg-surface border-b border-border-subtle text-text-muted text-[10px] font-bold uppercase tracking-widest">
+                <th className="px-6 py-4">Date</th>
+                <th className="px-6 py-4">Vehicle</th>
+                <th className="px-6 py-4">Site</th>
+                <th className="px-6 py-4">Material</th>
+                <th className="px-6 py-4">Trips</th>
+                <th className="px-6 py-4">Brass</th>
+                <th className="px-6 py-4 text-center">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-border-subtle">
+              {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
+                <tr key={c.id}>
+                  <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{c.site || '-'}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-text-main">{c.trips || 1}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
+                  <td className="px-6 py-4 text-center">
+                    <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="md:hidden space-y-3 p-4">
+          {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
+            <div key={c.id} className="bg-bg-surface rounded-xl border border-border-subtle p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <span className="text-xs font-bold text-text-main">{c.vehicleNumber}</span>
+                  <span className="text-[10px] text-text-muted uppercase ml-2">{c.material}</span>
+                </div>
+                <CheckCircle2 className="h-4 w-4 text-success" />
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="text-text-muted">Date: <span className="text-text-main font-bold">{formatDate(c.date)}</span></div>
+                <div className="text-text-muted">Site: <span className="text-text-main font-medium uppercase">{c.site || '-'}</span></div>
+                <div className="text-text-muted">Trips: <span className="text-text-main font-bold">{c.trips || 1}</span></div>
+                <div className="text-text-muted">Brass: <span className="text-text-main font-bold">{c.brass}</span></div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -458,7 +479,7 @@ export default function AssistantDashboard({
         title="New Billing Entry"
       >
         <form className="space-y-4" onSubmit={handleAddCustomer}>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Type</label>
               <select 
@@ -525,7 +546,7 @@ export default function AssistantDashboard({
               ))}
             </datalist>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Trips</label>
               <input 
@@ -543,7 +564,7 @@ export default function AssistantDashboard({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
               <input 

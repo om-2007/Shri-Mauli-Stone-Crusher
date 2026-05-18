@@ -164,7 +164,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [pendingSync]);
 
-  const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 12000) => {
+  const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 20000) => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -256,7 +256,7 @@ export default function App() {
 
   const runRefreshData = async (label: string) => {
     try {
-      const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 12000);
+      const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 20000);
       if (!res) {
         throw new Error('Request timeout');
       }

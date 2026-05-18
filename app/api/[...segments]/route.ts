@@ -49,6 +49,41 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json(await getSystemState());
     }
 
+    if (segments.length === 1 && segments[0] === 'cron' && segments[1] === 'day-status') {
+      await safeInitDb();
+      await autoUpdateDayStatus();
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  } catch (error) {
+    if (segments.length === 1 && segments[0] === 'data') {
+      return NextResponse.json({
+        customers: [],
+        maintenance: [],
+        salaries: [],
+        khataPayments: [],
+        assistants: [],
+        customerRates: [],
+        khataClients: [],
+        ownerProfile: null,
+        notificationSettings: { enableKhataReminders: true, enableMaintenanceAlerts: true },
+        isDayStarted: false,
+        degraded: true,
+      }, { status: 200 });
+    }
+
+    if (segments.length === 1 && segments[0] === 'system-state') {
+      return NextResponse.json({ isDayStarted: false, degraded: true }, { status: 200 });
+    }
+    return errorResponse(error, 'Database error');
+  }
+}
+
+    if (segments.length === 1 && segments[0] === 'system-state') {
+      return NextResponse.json(await getSystemState());
+    }
+
     if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'day-status') {
       await safeInitDb();
       await autoUpdateDayStatus();
