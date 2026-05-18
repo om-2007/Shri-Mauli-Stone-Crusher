@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, X, LayoutDashboard, Users, HardHat, Settings, LogOut, 
-  ReceiptText, Wrench, BookOpen, Bell, Check
+  ReceiptText, Wrench, BookOpen, Bell, Check, CloudUpload, CheckCircle2
 } from 'lucide-react';
 import { LogoIcon } from './LogoIcon';
 import { User, UserRole, Notification } from '../types';
@@ -16,6 +16,9 @@ interface LayoutProps {
   setActiveTab: (tab: string) => void;
   notifications?: Notification[];
   markNotificationAsRead?: (id: string) => void;
+  onForceSync?: () => void;
+  isForceSyncing?: boolean;
+  forceSyncResult?: { success: number; failed: number } | null;
 }
 
 export default function Layout({ 
@@ -25,7 +28,10 @@ export default function Layout({
   activeTab, 
   setActiveTab,
   notifications = [],
-  markNotificationAsRead
+  markNotificationAsRead,
+  onForceSync,
+  isForceSyncing = false,
+  forceSyncResult,
 }: LayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -114,7 +120,47 @@ export default function Layout({
               {activeTab === 'dashboard' ? `${user.role.toLowerCase()} Control Center` : activeTab}
             </h2>
             
-            <div className="flex items-center space-x-6">
+            <div className="flex items-center space-x-4 md:space-x-6">
+              {onForceSync && (
+                <div className="relative">
+                  <button 
+                    onClick={onForceSync}
+                    disabled={isForceSyncing}
+                    className={cn(
+                      "p-2 rounded-lg transition-colors relative",
+                      isForceSyncing
+                        ? "bg-primary/10 text-primary animate-pulse cursor-wait"
+                        : forceSyncResult
+                          ? "bg-success/10 text-success"
+                          : "text-text-muted hover:text-primary"
+                    )}
+                    title="Force sync all local data to database"
+                  >
+                    {forceSyncResult ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <CloudUpload className="h-5 w-5" />
+                    )}
+                  </button>
+                  <AnimatePresence>
+                    {forceSyncResult && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 4 }}
+                        className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-border-subtle z-20 p-3 text-center"
+                      >
+                        <p className="text-[10px] font-bold text-success uppercase">Sync Complete</p>
+                        <p className="text-xs text-text-main">{forceSyncResult.success} synced</p>
+                        {forceSyncResult.failed > 0 && (
+                          <p className="text-xs text-danger">{forceSyncResult.failed} failed</p>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
               {/* Notifications Center */}
               <div className="relative">
                 <button 
@@ -275,7 +321,41 @@ export default function Layout({
                   </button>
                 ))}
               </nav>
-              <div className="p-4 border-t border-slate-100 mb-6">
+              <div className="p-4 border-t border-slate-100">
+                {onForceSync && (
+                  <button
+                    onClick={() => {
+                      onForceSync();
+                      setIsMobileMenuOpen(false);
+                    }}
+                    disabled={isForceSyncing}
+                    className={cn(
+                      "flex items-center justify-center w-full px-4 py-3 rounded-xl text-sm font-bold mb-3",
+                      isForceSyncing
+                        ? "bg-primary/10 text-primary cursor-wait"
+                        : forceSyncResult
+                          ? "bg-success/10 text-success"
+                          : "bg-primary text-white hover:bg-primary-dark"
+                    )}
+                  >
+                    {isForceSyncing ? (
+                      <>
+                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                        Syncing...
+                      </>
+                    ) : forceSyncResult ? (
+                      <>
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Synced ({forceSyncResult.success})
+                      </>
+                    ) : (
+                      <>
+                        <CloudUpload className="mr-2 h-4 w-4" />
+                        Push All Data to Server
+                      </>
+                    )}
+                  </button>
+                )}
                 <div className="flex items-center p-4 bg-slate-50 rounded-2xl">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-slate-900 truncate">{user.name}</p>

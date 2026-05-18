@@ -330,7 +330,7 @@ export default function App() {
       try {
         const res = await fetchWithTimeout('/api/system-state', undefined, 8000);
         const data = await parseJsonResponse(res, 'Day status poll');
-        if (data.isDayStarted !== undefined && data.isDayStarted !== isDayStarted) {
+        if (data && data.isDayStarted !== undefined && data.isDayStarted !== isDayStarted) {
           setIsDayStarted(data.isDayStarted);
         }
       } catch (e) {
@@ -384,6 +384,144 @@ export default function App() {
 
     addToPendingSync('SAVE', 'settings', { id: currentUser?.id, ...settings });
     processPendingSync();
+  };
+
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
+  const [forceSyncResult, setForceSyncResult] = useState<{ success: number; failed: number } | null>(null);
+
+  const forceSyncAll = async () => {
+    setIsForceSyncing(true);
+    setForceSyncResult(null);
+    let successCount = 0;
+    let failedCount = 0;
+
+    const pushWithoutTimeout = async (url: string, body: any) => {
+      return fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    };
+
+    const syncCustomers = async () => {
+      for (const c of customers) {
+        try {
+          const res = await pushWithoutTimeout('/api/customers', c);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncMaintenance = async () => {
+      for (const m of maintenance) {
+        try {
+          const res = await pushWithoutTimeout('/api/maintenance', m);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncSalaries = async () => {
+      for (const s of salaries) {
+        try {
+          const res = await pushWithoutTimeout('/api/salaries', s);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncKhataPayments = async () => {
+      for (const p of khataPayments) {
+        try {
+          const res = await pushWithoutTimeout('/api/khata-payments', p);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncCustomerRates = async () => {
+      for (const r of customerRates) {
+        try {
+          const res = await pushWithoutTimeout('/api/customer-rates', r);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncKhataClients = async () => {
+      for (const kc of khataClients) {
+        try {
+          const res = await pushWithoutTimeout('/api/khata-clients', kc);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncAssistants = async () => {
+      for (const a of assistants) {
+        try {
+          const res = await pushWithoutTimeout('/api/assistants', a);
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    const syncSettings = async () => {
+      if (currentUser) {
+        try {
+          const res = await pushWithoutTimeout('/api/settings', {
+            id: currentUser.id,
+            name: currentUser.name,
+            phone: currentUser.phone,
+            role: currentUser.role,
+          });
+          if (res.ok) successCount++;
+          else failedCount++;
+        } catch {
+          failedCount++;
+        }
+      }
+    };
+
+    await Promise.all([
+      syncCustomers(),
+      syncMaintenance(),
+      syncSalaries(),
+      syncKhataPayments(),
+      syncCustomerRates(),
+      syncKhataClients(),
+      syncAssistants(),
+      syncSettings(),
+    ]);
+
+    if (successCount > 0) {
+      setPendingSync(prev => prev.filter(() => false));
+    }
+
+    setForceSyncResult({ success: successCount, failed: failedCount });
+    setIsForceSyncing(false);
+    setTimeout(() => setForceSyncResult(null), 5000);
   };
 
 const syncCustomer = async (data: any) => {
@@ -706,6 +844,9 @@ const syncCustomer = async (data: any) => {
         setActiveTab={setActiveTab}
         notifications={notifications}
         markNotificationAsRead={markNotificationAsRead}
+        onForceSync={forceSyncAll}
+        isForceSyncing={isForceSyncing}
+        forceSyncResult={forceSyncResult}
       >
         {shouldUseOwnerDashboard ? (
           <OwnerDashboard 
