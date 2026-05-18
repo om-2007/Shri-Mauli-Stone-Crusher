@@ -86,6 +86,7 @@ export default function AssistantDashboard({
   const [vehicle, setVehicle] = useState('');
   const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
+  const [trips, setTrips] = useState('1');
   const [brass, setBrass] = useState('');
   const [weight, setWeight] = useState('');
   const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
@@ -98,7 +99,7 @@ export default function AssistantDashboard({
 
   const availableKhataMaterials = useMemo(() => 
     state.customerRates
-      .filter(r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase())
+      .filter(r => (r.customerName || '').trim().toUpperCase() === (custName || '').trim().toUpperCase())
       .map(r => r.material),
     [custName, state.customerRates]
   );
@@ -106,7 +107,7 @@ export default function AssistantDashboard({
   // Auto-detect Regular Customer
   useEffect(() => {
     const isRegular = state.customerRates.some(
-      r => r.customerName.trim().toUpperCase() === custName.trim().toUpperCase()
+      r => (r.customerName || '').trim().toUpperCase() === (custName || '').trim().toUpperCase()
     );
     
     if (isRegular) {
@@ -141,12 +142,15 @@ export default function AssistantDashboard({
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
     const normalizedVehicle = normalizeVehicleNumber(vehicle);
-    const matchedCustomer = state.customers.find(
-      customer =>
-        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
-        customer.customerName?.trim()
-    );
-    const resolvedCustomerName = matchedCustomer?.customerName?.trim() || custName.trim();
+    
+    // CRITICAL: Always prioritize the manually entered name (custName).
+    // Do NOT fallback to matchedCustomer if user has typed something.
+    const resolvedCustomerName = custName.trim();
+    
+    if (!resolvedCustomerName) {
+      alert('Customer name is required');
+      return;
+    }
 
     let finalRate = 0;
     if (custType === 'REGULAR') {
@@ -166,6 +170,10 @@ export default function AssistantDashboard({
       finalRate = parseFloat(asstRate) || 0;
     }
 
+    const tripsNum = isNaN(parseInt(trips)) ? 1 : parseInt(trips);
+    const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
+    const weightNum = isNaN(parseFloat(weight)) ? 0 : parseFloat(weight);
+
     const newEntry = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString().split('T')[0],
@@ -174,12 +182,14 @@ export default function AssistantDashboard({
       site: site.trim(),
       customerType: custType,
       material: material,
-      brass: parseFloat(brass),
-      weight: parseFloat(weight) || 0,
+      trips: tripsNum,
+      brass: brassNum,
+      weight: weightNum,
       rateUnit,
       rate: finalRate,
       amount: (() => {
-        const baseAmount = (rateUnit === 'PER_WEIGHT' ? (parseFloat(weight) || 0) : parseFloat(brass)) * finalRate;
+        const quantity = rateUnit === 'PER_WEIGHT' ? weightNum : (brassNum * tripsNum);
+        const baseAmount = quantity * finalRate;
         const clientConfig = state.khataClients.find(
           client => client.name.trim().toUpperCase() === resolvedCustomerName.toUpperCase()
         );
@@ -197,6 +207,7 @@ export default function AssistantDashboard({
     setVehicle('');
     setSite('');
     setMaterial('');
+    setTrips('1');
     setBrass('');
     setWeight('');
     setRateUnit('PER_BRASS');
@@ -258,6 +269,7 @@ export default function AssistantDashboard({
               <th className="px-6 py-4">Vehicle</th>
               <th className="px-6 py-4">Site</th>
               <th className="px-6 py-4">Material</th>
+              <th className="px-6 py-4">Trips</th>
               <th className="px-6 py-4">Brass</th>
               <th className="px-6 py-4 text-center">Status</th>
             </tr>
@@ -269,6 +281,7 @@ export default function AssistantDashboard({
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{c.site || '-'}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-muted uppercase">{c.material}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">{c.trips || 1}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{c.brass} <span className="text-text-muted font-normal">BRS</span></td>
                 <td className="px-6 py-4 text-center">
                   <CheckCircle2 className="h-4 w-4 text-success mx-auto" />
@@ -498,20 +511,28 @@ export default function AssistantDashboard({
               />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material</label>
+            <input 
+              type="text" required value={material} onChange={e => setMaterial(e.target.value)}
+              list="asst-khata-materials"
+              className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
+              placeholder="e.g. 20mm aggregate"
+            />
+            <datalist id="asst-khata-materials">
+              {availableKhataMaterials.map(m => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material</label>
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Trips</label>
               <input 
-                type="text" required value={material} onChange={e => setMaterial(e.target.value)}
-                list="asst-khata-materials"
-                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
-                placeholder="Type"
+                type="number" required value={trips} onChange={e => setTrips(e.target.value)}
+                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold"
+                placeholder="1"
               />
-              <datalist id="asst-khata-materials">
-                {availableKhataMaterials.map(m => (
-                  <option key={m} value={m} />
-                ))}
-              </datalist>
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Quantity (BRS)</label>

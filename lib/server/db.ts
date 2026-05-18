@@ -86,6 +86,7 @@ export async function initDb() {
     site TEXT,
     customerType TEXT,
     material TEXT,
+    trips TEXT,
     brass TEXT,
     weight TEXT,
     rateUnit TEXT,
@@ -104,6 +105,7 @@ export async function initDb() {
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS site TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS customerType TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS material TEXT`,
+    `ALTER TABLE customers ADD COLUMN IF NOT EXISTS trips TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS brass TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS weight TEXT`,
     `ALTER TABLE customers ADD COLUMN IF NOT EXISTS rateUnit TEXT`,
@@ -237,19 +239,34 @@ export async function safeInitDb() {
 }
 
 export async function autoUpdateDayStatus() {
+  // Use a very short timeout for auto-updates so they don't block the app
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Auto-update timeout')), 3000)
+  );
+
   try {
     const shouldBeStarted = isBusinessHoursIST();
-    const systemState = await pool.query("SELECT value FROM system_state WHERE key = 'isDayStarted'");
+    
+    // Wrap the query in a timeout
+    const systemState: any = await Promise.race([
+      pool.query("SELECT value FROM system_state WHERE key = 'isDayStarted'"),
+      timeoutPromise
+    ]);
+
     const currentStatus = systemState.rows.length > 0 && systemState.rows[0].value === 'true';
 
     if (shouldBeStarted !== currentStatus) {
-      await pool.query(
-        "UPDATE system_state SET value = $1 WHERE key = 'isDayStarted'",
-        [shouldBeStarted.toString()]
-      );
+      await Promise.race([
+        pool.query(
+          "INSERT INTO system_state (key, value) VALUES ('isDayStarted', $1) ON CONFLICT (key) DO UPDATE SET value = $1",
+          [String(shouldBeStarted)]
+        ),
+        timeoutPromise
+      ]);
     }
   } catch (error) {
-    console.error('Failed to auto-update day status:', error);
+    // Silently handle errors/timeouts for auto-update
+    console.log('[AUTO-UPDATE] Day status update skipped (timeout or error)');
   }
 }
 
@@ -293,6 +310,7 @@ export async function getAppData() {
       site: customer.site || '',
       customerType: customer.customertype || customer.customerType || 'OTHER',
       material: customer.material || '',
+      trips: customer.trips ? parseInt(customer.trips) : 1,
       brass: customer.brass ? parseFloat(customer.brass) : 0,
       weight: customer.weight ? parseFloat(customer.weight) : 0,
       rateUnit: customer.rateunit || customer.rateUnit || 'PER_BRASS',
@@ -454,6 +472,7 @@ export async function saveCustomer(payload: any) {
     site,
     customerType,
     material,
+    trips,
     brass,
     weight,
     rateUnit,
@@ -497,15 +516,16 @@ export async function saveCustomer(payload: any) {
   if (id && updateFlag) {
     await pool.query(
       `UPDATE customers
-       SET vehicleNumber = $1, customerName = $2, site = $3, customerType = $4, material = $5, brass = $6,
-           weight = $7, rateUnit = $8, rate = $9, amount = $10, paidAmount = $11, status = $12, date = $13, addedBy = $14, addedById = $15
-       WHERE id = $16`,
+       SET vehicleNumber = $1, customerName = $2, site = $3, customerType = $4, material = $5, trips = $6, brass = $7,
+           weight = $8, rateUnit = $9, rate = $10, amount = $11, paidAmount = $12, status = $13, date = $14, addedBy = $15, addedById = $16
+       WHERE id = $17`,
       [
         trimmedVehicleNumber,
         resolvedCustomerName,
         site || '',
         customerType || 'OTHER',
         material || '',
+        trips || '1',
         brass || '0',
         weight || '0',
         rateUnit || 'PER_BRASS',
@@ -520,13 +540,13 @@ export async function saveCustomer(payload: any) {
       ]
     );
 
-    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
+    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
   }
 
   const newId = Date.now().toString();
   await pool.query(
-    `INSERT INTO customers (id, vehicleNumber, customerName, site, customerType, material, brass, weight, rateUnit, rate, amount, paidAmount, status, date, addedBy, addedById)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+    `INSERT INTO customers (id, vehicleNumber, customerName, site, customerType, material, trips, brass, weight, rateUnit, rate, amount, paidAmount, status, date, addedBy, addedById)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
     [
       newId,
       trimmedVehicleNumber,
@@ -534,6 +554,7 @@ export async function saveCustomer(payload: any) {
       site || '',
       customerType || 'OTHER',
       material || '',
+      trips || '1',
       brass || '0',
       weight || '0',
       rateUnit || 'PER_BRASS',
@@ -547,7 +568,7 @@ export async function saveCustomer(payload: any) {
     ]
   );
 
-  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
+  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
 }
 
 export async function updateCustomer(id: string, payload: any) {
@@ -707,7 +728,20 @@ export async function saveKhataClient(payload: any) {
     throw new Error('Khata client name required');
   }
 
-  const nextId = id || Date.now().toString();
+  // Check if a client with this name already exists (if we don't have an ID)
+  let nextId = id;
+  if (!nextId) {
+    const existing = await pool.query(
+      'SELECT id FROM khata_clients WHERE UPPER(name) = UPPER($1)',
+      [normalizedName]
+    );
+    if (existing.rows.length > 0) {
+      nextId = existing.rows[0].id;
+    } else {
+      nextId = Date.now().toString();
+    }
+  }
+
   await pool.query(
     `INSERT INTO khata_clients (id, name, applyGst)
      VALUES ($1, $2, $3)

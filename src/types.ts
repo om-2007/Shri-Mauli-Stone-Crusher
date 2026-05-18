@@ -24,6 +24,7 @@ export interface CustomerEntry {
   site?: string;
   customerType: CustomerType;
   material: string;
+  trips: number;
   brass: number;
   weight: number;
   rateUnit: RateUnit;
@@ -105,4 +106,6 @@ export interface AppState {
   notifications: Notification[];
   notificationSettings: NotificationSettings;
   isDayStarted: boolean; // Controls if assistants can add/edit records
+  pendingSyncCount: number;
+  syncNow: () => Promise<void>;
 }

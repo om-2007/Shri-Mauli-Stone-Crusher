@@ -65,9 +65,11 @@ export default function OwnerDashboard({
 
   // Customer Form States
   const [custName, setCustName] = useState('');
+  const [custDate, setCustDate] = useState(new Date().toISOString().split('T')[0]);
   const [vehicle, setVehicle] = useState('');
   const [site, setSite] = useState('');
   const [material, setMaterial] = useState('');
+  const [trips, setTrips] = useState('1');
   const [brass, setBrass] = useState('');
   const [weight, setWeight] = useState('');
   const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
@@ -159,7 +161,10 @@ export default function OwnerDashboard({
   };
 
   const selectedKhataClientData = useMemo(
-    () => state.khataClients.find(client => client.name === selectedKhataClient) || null,
+    () => state.khataClients.find(client => 
+      selectedKhataClient && 
+      (client.name || '').trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
+    ) || null,
     [state.khataClients, selectedKhataClient]
   );
 
@@ -170,15 +175,15 @@ export default function OwnerDashboard({
         client.applyGst
     );
 
-  const calculateAmountByUnit = (unit: RateUnit, rateValue: number, brassValue: number, weightValue: number) => {
-    const quantity = unit === 'PER_WEIGHT' ? weightValue : brassValue;
+  const calculateAmountByUnit = (unit: RateUnit, rateValue: number, brassValue: number, weightValue: number, tripsValue: number) => {
+    const quantity = unit === 'PER_WEIGHT' ? weightValue : (brassValue * tripsValue);
     return quantity * rateValue;
   };
 
   const formatRateUnit = (unit: RateUnit) => (unit === 'PER_WEIGHT' ? 'per weight' : 'per brass');
 
-  const getQuantityByUnit = (unit: RateUnit, brassValue: number, weightValue: number) =>
-    unit === 'PER_WEIGHT' ? weightValue : brassValue;
+  const getQuantityByUnit = (unit: RateUnit, brassValue: number, weightValue: number, tripsValue: number) =>
+    unit === 'PER_WEIGHT' ? weightValue : (brassValue * tripsValue);
 
   const getRegularRateConfig = (
     customerName: string,
@@ -203,11 +208,12 @@ export default function OwnerDashboard({
     materialName: string,
     brassValue: number,
     weightValue = 0,
+    tripsValue = 1,
     fallbackRate = 0,
     fallbackRateUnit: RateUnit = 'PER_BRASS'
   ) => {
     const rateConfig = getRegularRateConfig(customerName, materialName, fallbackRate, fallbackRateUnit);
-    const baseAmount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, brassValue, weightValue);
+    const baseAmount = calculateAmountByUnit(rateConfig.rateUnit, rateConfig.rate, brassValue, weightValue, tripsValue);
     return shouldApplyGst(customerName) ? baseAmount * 1.05 : baseAmount;
   };
 
@@ -709,7 +715,7 @@ export default function OwnerDashboard({
         customer.id !== editingId
     );
 
-    if (matchedCustomer && matchedCustomer.customerName !== custName) {
+    if (matchedCustomer && !custName.trim()) {
       setCustName(matchedCustomer.customerName);
     }
   }, [vehicle, custName, state.customers, editingId]);
@@ -723,28 +729,38 @@ export default function OwnerDashboard({
         customer.customerName?.trim() &&
         customer.id !== editingId
     );
-    const resolvedCustomerName = matchedCustomer?.customerName?.trim() || custName.trim();
+    // CRITICAL: Always prioritize the manually entered name (custName) over any matched customer.
+    // Auto-fill should only be a suggestion in the UI, not a forced override during save.
+    const resolvedCustomerName = custName.trim();
+    
+    if (!resolvedCustomerName) {
+      alert('Customer name is required');
+      return;
+    }
+
     const rateNum = isNaN(parseFloat(rate)) ? 0 : parseFloat(rate);
+    const tripsNum = isNaN(parseInt(trips)) ? 1 : parseInt(trips);
     const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
     const weightNum = isNaN(parseFloat(weight)) ? 0 : parseFloat(weight);
     const regularRateConfig = getRegularRateConfig(resolvedCustomerName, material, rateNum, rateUnit);
     const totalAmount = custType === 'REGULAR'
-      ? calculateRegularAmount(resolvedCustomerName, material, brassNum, weightNum, rateNum, rateUnit)
-      : calculateAmountByUnit(rateUnit, rateNum, brassNum, weightNum);
+      ? calculateRegularAmount(resolvedCustomerName, material, brassNum, weightNum, tripsNum, rateNum, rateUnit)
+      : calculateAmountByUnit(rateUnit, rateNum, brassNum, weightNum, tripsNum);
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
       // For edit - sync to backend with updateFlag
-      (setCustomers as any)({ id: editingId, updateFlag: true, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, brass: brassNum, weight: weightNum, rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit, rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
+      (setCustomers as any)({ id: editingId, updateFlag: true, date: custDate, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, trips: tripsNum, brass: brassNum, weight: weightNum, rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit, rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
       const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
-        date: new Date().toISOString().split('T')[0],
+        date: custDate,
         vehicleNumber: vehicle,
         customerName: resolvedCustomerName,
         site: site.trim(),
         customerType: custType,
         material: material,
+        trips: tripsNum,
         brass: brassNum,
         weight: weightNum,
         rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit,
@@ -757,15 +773,20 @@ export default function OwnerDashboard({
       };
       // Sync to backend only - App.tsx will add to state after DB save
       (setCustomers as any)(newEntry);
-      
-      // If Khata Client (REGULAR), also save to DB
-      if (custType === 'REGULAR' && resolvedCustomerName) {
-        // Add to Khata clients
+    }
+
+    // If Khata Client (REGULAR), ensure they are in the Khata registry
+    if (custType === 'REGULAR' && resolvedCustomerName) {
+      // Only add if not already in khata clients
+      const isAlreadyKhata = state.khataClients.some(
+        k => k.name.trim().toUpperCase() === resolvedCustomerName.toUpperCase()
+      );
+      if (!isAlreadyKhata) {
         (setKhataClients as any)({ name: resolvedCustomerName, applyGst: false });
-        // Always create rate entry for the material (rate can be 0)
-        if ((material || '').trim()) {
-          (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: rateNum, rateUnit });
-        }
+      }
+      // Always create/update rate entry for the material (rate can be 0)
+      if ((material || '').trim()) {
+        (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: rateNum, rateUnit });
       }
     }
 
@@ -785,9 +806,11 @@ export default function OwnerDashboard({
   const handleEditCustomer = (customer: CustomerEntry) => {
     setEditingId(customer.id);
     setCustName(customer.customerName);
+    setCustDate(customer.date.split('T')[0]);
     setVehicle(customer.vehicleNumber);
     setSite(customer.site || '');
     setMaterial(customer.material);
+    setTrips((customer.trips || 1).toString());
     setBrass(customer.brass.toString());
     setWeight((customer.weight || 0).toString());
     setRateUnit(customer.rateUnit || 'PER_BRASS');
@@ -887,7 +910,7 @@ export default function OwnerDashboard({
   const stats = useMemo(() => {
     const getAmount = (c: any) => {
       if (c.customerType === 'REGULAR') {
-        return calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS');
+        return calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.trips || 1, c.rate, c.rateUnit || 'PER_BRASS');
       }
       return c.amount;
     };
@@ -922,7 +945,7 @@ export default function OwnerDashboard({
       if (dailyMap[date]) {
         let amt = c.amount;
         if (c.customerType === 'REGULAR') {
-          amt = calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS');
+          amt = calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.trips || 1, c.rate, c.rateUnit || 'PER_BRASS');
         }
         dailyMap[date].income += amt;
       }
@@ -1125,6 +1148,7 @@ export default function OwnerDashboard({
               <th className="px-6 py-4">Customer Entity</th>
               <th className="px-6 py-4">Site</th>
               <th className="px-6 py-4">Material Specification</th>
+              <th className="px-6 py-4">Trips</th>
               <th className="px-6 py-4">Brass</th>
               <th className="px-6 py-4">Weight</th>
               <th className="px-6 py-4">Rate Unit</th>
@@ -1154,13 +1178,14 @@ export default function OwnerDashboard({
                 </td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main uppercase">{customer.site || '-'}</td>
                 <td className="px-6 py-4 text-xs font-medium text-text-main">{customer.material}</td>
+                <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.trips || 1}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.brass} <span className="text-text-muted font-normal uppercase tracking-tighter">BRS</span></td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">{customer.weight || 0}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-muted uppercase">{formatRateUnit(customer.rateUnit || 'PER_BRASS')}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatCurrency(customer.rate)}</td>
                 <td className="px-6 py-4 text-xs font-bold text-text-main">
                     {customer.customerType === 'REGULAR'
-                      ? formatCurrency(calculateRegularAmount(customer.customerName, customer.material, customer.brass, customer.weight || 0, customer.rate, customer.rateUnit || 'PER_BRASS'))
+                      ? formatCurrency(calculateRegularAmount(customer.customerName, customer.material, customer.brass, customer.weight || 0, customer.trips || 1, customer.rate, customer.rateUnit || 'PER_BRASS'))
                       : formatCurrency(customer.amount)}
                 </td>
                 <td className="px-6 py-4 text-xs font-bold text-success">
@@ -1410,7 +1435,10 @@ export default function OwnerDashboard({
        client.name.toLowerCase().includes((searchTerm || '').toLowerCase())
      );
 
-    const clientRates = state.customerRates.filter(r => r.customerName === selectedKhataClient);
+    const clientRates = state.customerRates.filter(r => 
+      selectedKhataClient && 
+      (r.customerName || '').trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
+    );
     
     // Financial Summary for Selected Khata Client
     const clientTransactions = state.customers.filter(c => 
@@ -1424,7 +1452,7 @@ export default function OwnerDashboard({
     
     const getAmount = (c: any) => {
       return c.customerType === 'REGULAR'
-        ? calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.rate, c.rateUnit || 'PER_BRASS')
+        ? calculateRegularAmount(c.customerName, c.material, c.brass, c.weight || 0, c.trips || 1, c.rate, c.rateUnit || 'PER_BRASS')
         : c.amount;
     };
     
@@ -1958,6 +1986,16 @@ export default function OwnerDashboard({
         title={editingId ? "Update Billing Record" : "New Billing Record"}
       >
         <form onSubmit={handleAddCustomer} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Entry Date</label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+              <input 
+                type="date" required value={custDate} onChange={e => setCustDate(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
+              />
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Type</label>
@@ -2028,6 +2066,14 @@ export default function OwnerDashboard({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Trips</label>
+              <input 
+                type="number" required value={trips} onChange={e => setTrips(e.target.value)}
+                className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none"
+                placeholder="1"
+              />
+            </div>
+            <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Brass Quantity</label>
               <input 
                 type="number" step="0.01" value={brass} onChange={e => setBrass(e.target.value)}
@@ -2035,6 +2081,8 @@ export default function OwnerDashboard({
                 placeholder="0.00"
               />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Weight</label>
               <input 
@@ -2083,8 +2131,8 @@ export default function OwnerDashboard({
               <span className="text-sm font-black text-text-main">
                 ₹{(
                   custType === 'REGULAR'
-                    ? calculateRegularAmount(custName, material, parseFloat(brass) || 0, parseFloat(weight) || 0, parseFloat(rate) || 0, rateUnit)
-                    : calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0)
+                    ? calculateRegularAmount(custName, material, parseFloat(brass) || 0, parseFloat(weight) || 0, parseInt(trips) || 1, parseFloat(rate) || 0, rateUnit)
+                    : calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0, parseInt(trips) || 1)
                 ).toLocaleString()}
               </span>
             </div>
@@ -2092,7 +2140,7 @@ export default function OwnerDashboard({
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-bold text-text-muted uppercase">Balance Remaining</span>
                 <span className="text-sm font-black text-danger">
-                  ₹{((calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0) - (parseFloat(paidAmount) || 0))).toLocaleString()}
+                  ₹{((calculateAmountByUnit(rateUnit, parseFloat(rate) || 0, parseFloat(brass) || 0, parseFloat(weight) || 0, parseInt(trips) || 1) - (parseFloat(paidAmount) || 0))).toLocaleString()}
                 </span>
               </div>
             )}

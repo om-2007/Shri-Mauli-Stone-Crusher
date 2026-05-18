@@ -40,33 +40,150 @@ export default function App() {
   }, [currentUser?.role, activeTab]);
   
   // App state
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [maintenance, setMaintenance] = useState<any[]>([]);
-  const [salaries, setSalaries] = useState<any[]>([]);
-  const [assistants, setAssistants] = useState<any[]>([]);
-  const [customerRates, setCustomerRates] = useState<any[]>([]);
-  const [khataClients, setKhataClients] = useState<KhataClient[]>([]);
-  const [khataPayments, setKhataPayments] = useState<any[]>([]);
-  const [ownerProfile, setOwnerProfile] = useState<any>(null);
-  const [isDayStarted, setIsDayStarted] = useState(false);
+  const [customers, setCustomers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('customers');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [maintenance, setMaintenance] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('maintenance');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [salaries, setSalaries] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('salaries');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [assistants, setAssistants] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('assistants');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [customerRates, setCustomerRates] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('customerRates');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [khataClients, setKhataClients] = useState<KhataClient[]>(() => {
+    try {
+      const saved = localStorage.getItem('khataClients');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [khataPayments, setKhataPayments] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('khataPayments');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+  const [ownerProfile, setOwnerProfile] = useState<any>(() => {
+    try {
+      const saved = localStorage.getItem('ownerProfile');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) { return null; }
+  });
+  const [isDayStarted, setIsDayStarted] = useState(() => {
+    return localStorage.getItem('isDayStarted') === 'true';
+  });
+  const [pendingSync, setPendingSync] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('pendingSync');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) { return []; }
+  });
+
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState('');
   const [isBackgroundSyncing, startBackgroundSyncTransition] = useTransition();
   const refreshPromiseRef = useRef<Promise<any> | null>(null);
   const queuedRefreshLabelRef = useRef<string | null>(null);
 
+  // Persist state changes to localStorage
+  useEffect(() => { localStorage.setItem('customers', JSON.stringify(customers)); }, [customers]);
+  useEffect(() => { localStorage.setItem('maintenance', JSON.stringify(maintenance)); }, [maintenance]);
+  useEffect(() => { localStorage.setItem('salaries', JSON.stringify(salaries)); }, [salaries]);
+  useEffect(() => { localStorage.setItem('assistants', JSON.stringify(assistants)); }, [assistants]);
+  useEffect(() => { localStorage.setItem('customerRates', JSON.stringify(customerRates)); }, [customerRates]);
+  useEffect(() => { localStorage.setItem('khataClients', JSON.stringify(khataClients)); }, [khataClients]);
+  useEffect(() => { localStorage.setItem('khataPayments', JSON.stringify(khataPayments)); }, [khataPayments]);
+  useEffect(() => { localStorage.setItem('ownerProfile', JSON.stringify(ownerProfile)); }, [ownerProfile]);
+  useEffect(() => { localStorage.setItem('isDayStarted', String(isDayStarted)); }, [isDayStarted]);
+  useEffect(() => { localStorage.setItem('pendingSync', JSON.stringify(pendingSync)); }, [pendingSync]);
+  useEffect(() => { if (currentUser) localStorage.setItem('currentUser', JSON.stringify(currentUser)); }, [currentUser]);
+
+  const addToPendingSync = (action: string, collection: string, data: any) => {
+    const id = data.id || Date.now().toString();
+    setPendingSync(prev => [...prev, { id, action, collection, data, timestamp: Date.now() }]);
+  };
+
+  const processPendingSync = async () => {
+    if (pendingSync.length === 0) return;
+    
+    const queue = [...pendingSync];
+    const successes: string[] = [];
+
+    for (const item of queue) {
+      try {
+        let res;
+        if (item.action === 'DELETE') {
+          res = await fetchWithTimeout(`/api/${item.collection}/${item.data.id}`, { method: 'DELETE' }, 8000);
+        } else if (item.action === 'SAVE') {
+          res = await fetchWithTimeout(`/api/${item.collection}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item.data)
+          }, 8000);
+        }
+
+        if (res?.ok) {
+          successes.push(item.id);
+        } else {
+          break;
+        }
+      } catch (e) {
+        break; // Stop processing queue on first error (likely still offline/timeout)
+      }
+    }
+
+    if (successes.length > 0) {
+      setPendingSync(prev => prev.filter(item => !successes.includes(item.id)));
+    }
+  };
+
+  // Auto-sync pending records every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      processPendingSync();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [pendingSync]);
+
   const fetchWithTimeout = async (input: RequestInfo | URL, init?: RequestInit, timeoutMs = 12000) => {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      return await fetch(input, { ...init, signal: controller.signal });
+      const response = await fetch(input, { ...init, signal: controller.signal });
+      return response;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return null; // Return null on timeout
+      }
+      throw error;
     } finally {
       window.clearTimeout(timeoutId);
     }
   };
 
-  const parseJsonResponse = async (res: Response, label: string) => {
+  const parseJsonResponse = async (res: Response | null, label: string) => {
+    if (!res) return null; // Handle timeout null response
+
     const contentType = res.headers.get('content-type') || '';
     const raw = await res.text();
 
@@ -87,8 +204,29 @@ export default function App() {
 
   const applyServerData = (data: any) => {
     startBackgroundSyncTransition(() => {
-      setCustomers(data.customers || []);
-      setMaintenance(data.maintenance || []);
+      // Merge logic: Server data + Pending local SAVEs - Pending local DELETEs
+      let mergedCustomers = data.customers || [];
+      
+      // Re-apply pending SAVEs that might not be on server yet
+      pendingSync.filter(p => p.collection === 'customers' && p.action === 'SAVE').forEach(p => {
+        const idx = mergedCustomers.findIndex((c: any) => c.id === p.data.id);
+        if (idx >= 0) mergedCustomers[idx] = { ...mergedCustomers[idx], ...p.data };
+        else mergedCustomers = [p.data, ...mergedCustomers];
+      });
+
+      // Remove pending DELETEs
+      const pendingDeletes = new Set(pendingSync.filter(p => p.collection === 'customers' && p.action === 'DELETE').map(p => p.data.id));
+      mergedCustomers = mergedCustomers.filter((c: any) => !pendingDeletes.has(c.id));
+
+      setCustomers(mergedCustomers);
+      
+      // Similar merge for other collections
+      let mergedMaintenance = data.maintenance || [];
+      pendingSync.filter(p => p.collection === 'maintenance' && p.action === 'SAVE').forEach(p => {
+        if (!mergedMaintenance.some((m: any) => m.id === p.data.id)) mergedMaintenance = [p.data, ...mergedMaintenance];
+      });
+      setMaintenance(mergedMaintenance);
+
       setSalaries(data.salaries || []);
       setKhataPayments(data.khataPayments || []);
       setAssistants(data.assistants || []);
@@ -117,10 +255,21 @@ export default function App() {
   };
 
   const runRefreshData = async (label: string) => {
-    const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 12000);
-    const data = await parseJsonResponse(res, label);
-    applyServerData(data);
-    return data;
+    try {
+      const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 12000);
+      if (!res) {
+        throw new Error('Request timeout');
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await parseJsonResponse(res, label);
+      applyServerData(data);
+      return data;
+    } catch (err: any) {
+      if (err.message !== 'Timeout') {
+        console.error(`[REFRESH] ${label} failed:`, err);
+      }
+      return null;
+    }
   };
 
   const refreshData = async (label: string) => {
@@ -166,19 +315,7 @@ export default function App() {
   // Fetch data on mount
   useEffect(() => {
     refreshData('Initial data fetch')
-      .then(() => setLoading(false))
-      .catch(err => {
-        if (!(err instanceof Error && err.name === 'AbortError')) {
-          console.error('Failed to fetch data', err);
-        }
-        setOwnerProfile(DEFAULT_OWNER);
-        setSetupError(
-          err instanceof Error && err.name === 'AbortError'
-            ? 'Startup timed out. Database is responding too slowly or is unreachable. Check DATABASE_URL and CockroachDB status, then refresh.'
-            : err instanceof Error && err.message.includes('DATABASE_URL')
-              ? 'Database is not connected. Add DATABASE_URL in Vercel or .env.local, then redeploy.'
-              : 'Database connection failed. Check your CockroachDB connection string and redeploy.'
-        );
+      .finally(() => {
         setLoading(false);
       });
   }, []);
@@ -207,259 +344,162 @@ export default function App() {
   }, [isDayStarted, loading, setupError]);
 
   const syncDayStatus = async (status: boolean) => {
-    try {
-      const res = await fetch('/api/system-state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'isDayStarted', value: status })
-      });
-      if (res.ok) {
-        setIsDayStarted(status);
-        queueRefresh('Day status refresh');
-      }
-    } catch (e) {
-      console.error('Failed to sync day status', e);
-    }
+    // Optimistic Update
+    setIsDayStarted(status);
+    
+    addToPendingSync('SAVE', 'system-state', { key: 'isDayStarted', value: status });
+    processPendingSync();
   };
 
   const deleteRecord = async (collection: string, id: string) => {
-    console.log('Deleting:', collection, id);
-    try {
-      const res = await fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
-      console.log('Delete response:', res.status);
-      if (res.ok) {
-        console.log('Updating state for:', collection);
-        if (collection === 'customers') setCustomers(prev => prev.filter(c => c.id !== id));
-        if (collection === 'maintenance') setMaintenance(prev => prev.filter(m => m.id !== id));
-        if (collection === 'salaries') setSalaries(prev => prev.filter(s => s.id !== id));
-        if (collection === 'khata-payments') setKhataPayments(prev => prev.filter(p => p.id !== id));
-        if (collection === 'khataPayments') setKhataPayments(prev => prev.filter(p => p.id !== id));
-        if (collection === 'assistants') setAssistants(prev => prev.filter(a => a.id !== id));
-        if (collection === 'customer-rates') setCustomerRates(prev => prev.filter(r => r.id !== id));
-        if (collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
-        if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c.id !== id));
-        queueRefresh(`Refresh after deleting ${collection}`);
-      }
-    } catch (e) {
-      console.error('Failed to delete record', e);
-    }
+    // Optimistic Update
+    if (collection === 'customers') setCustomers(prev => prev.filter(c => c.id !== id));
+    if (collection === 'maintenance') setMaintenance(prev => prev.filter(m => m.id !== id));
+    if (collection === 'salaries') setSalaries(prev => prev.filter(s => s.id !== id));
+    if (collection === 'khata-payments' || collection === 'khataPayments') setKhataPayments(prev => prev.filter(p => p.id !== id));
+    if (collection === 'assistants') setAssistants(prev => prev.filter(a => a.id !== id));
+    if (collection === 'customer-rates' || collection === 'customerRates') setCustomerRates(prev => prev.filter(r => r.id !== id));
+    if (collection === 'khata-clients') setKhataClients(prev => prev.filter(c => c.id !== id));
+
+    addToPendingSync('DELETE', collection, { id });
+    processPendingSync();
   };
 
   const syncProfile = async (userData: { id: string, name: string, phone: string, role: string }) => {
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData)
-      });
-      if (res.ok) {
-        setCurrentUser(prev => prev ? { ...prev, name: userData.name, phone: userData.phone } : null);
-        if (userData.role === 'OWNER') {
-          setOwnerProfile(prev => ({ ...prev, name: userData.name, phone: userData.phone }));
-        } else {
-          setAssistants(prev => prev.map(a => a.id === userData.id ? { ...a, name: userData.name, phone: userData.phone } : a));
-        }
-        queueRefresh('Profile refresh');
-      }
-    } catch (e) {
-      console.error('Failed to sync profile', e);
+    // Optimistic Update
+    setCurrentUser(prev => prev ? { ...prev, name: userData.name, phone: userData.phone } : null);
+    if (userData.role === 'OWNER') {
+      setOwnerProfile(prev => ({ ...prev, name: userData.name, phone: userData.phone }));
+    } else {
+      setAssistants(prev => prev.map(a => a.id === userData.id ? { ...a, name: userData.name, phone: userData.phone } : a));
     }
+
+    addToPendingSync('SAVE', 'settings', userData);
+    processPendingSync();
   };
 
   const syncNotificationSettings = async (settings: any) => {
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: currentUser?.id, ...settings })
-      });
-      if (!res.ok) return;
-      setNotificationSettings(settings);
-      queueRefresh('Notification settings refresh');
-    } catch (e) {
-      console.error('Failed to sync settings', e);
-    }
+    // Optimistic Update
+    setNotificationSettings(settings);
+
+    addToPendingSync('SAVE', 'settings', { id: currentUser?.id, ...settings });
+    processPendingSync();
   };
 
 const syncCustomer = async (data: any) => {
     const customer = typeof data === 'function' ? data([])[0] : data;
-    if (!customer || !customer.id) {
-      return;
-    }
-    try {
-      const res = await fetch('/api/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(customer)
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        console.error('Sync error:', err.error);
-        return;
-      }
-      const stored = await res.json();
-      // If updateFlag was true, replace existing; otherwise add new
+    if (!customer || !customer.id) return;
+
+    // Optimistic Update - immediate state change
+    setCustomers(prev => {
       if (customer.updateFlag) {
-        setCustomers((prev: any) => prev.map((c: any) => c.id === stored.id ? stored : c));
-      } else {
-        setCustomers((prev: any) => {
-          if (prev.some((c: any) => c.id === stored.id)) return prev;
-          return [stored, ...prev];
-        });
+        return prev.map(c => c.id === customer.id ? { ...c, ...customer } : c);
       }
-      queueRefresh('Customer refresh');
-    } catch (e) {
-      console.error('Failed to sync customer', e);
-    }
+      if (prev.some(c => c.id === customer.id)) return prev;
+      return [customer, ...prev];
+    });
+
+    addToPendingSync('SAVE', 'customers', customer);
+    processPendingSync();
   };
 
   const syncMaintenance = async (data: any) => {
     const newMaint = typeof data === 'function' ? data([])[0] : data;
-    try {
-      const res = await fetch('/api/maintenance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newMaint)
-      });
-      if (!res.ok) return;
-      const stored = await res.json();
-      setMaintenance(prev => {
-        if (prev.some(m => m.id === stored.id)) return prev;
-        return [stored, ...prev];
-      });
-      queueRefresh('Maintenance refresh');
-    } catch (e) {
-      console.error('Failed to sync maintenance', e);
-    }
+    if (!newMaint || !newMaint.id) return;
+
+    // Optimistic Update
+    setMaintenance(prev => {
+      if (prev.some(m => m.id === newMaint.id)) return prev;
+      return [newMaint, ...prev];
+    });
+
+    addToPendingSync('SAVE', 'maintenance', newMaint);
+    processPendingSync();
   };
 
   const syncSalary = async (data: any) => {
     const newSalary = typeof data === 'function' ? data([])[0] : data;
-    try {
-      const res = await fetch('/api/salaries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSalary)
-      });
-      if (!res.ok) return;
-      const stored = await res.json();
-      setSalaries(prev => {
-        if (prev.some(s => s.id === stored.id)) return prev;
-        return [stored, ...prev];
-      });
-      queueRefresh('Salary refresh');
-    } catch (e) {
-      console.error('Failed to sync salary', e);
-    }
+    if (!newSalary || !newSalary.id) return;
+    setSalaries(prev => {
+      if (prev.some(s => s.id === newSalary.id)) return prev;
+      return [newSalary, ...prev];
+    });
+    addToPendingSync('SAVE', 'salaries', newSalary);
+    processPendingSync();
   };
 
-const syncKhataPayment = async (data: any) => {
+  const syncKhataPayment = async (data: any) => {
     const newPayment = typeof data === 'function' ? data([])[0] : data;
-    // Skip if already in local state
-    if (newPayment.id && khataPayments.some((p: any) => p.id === newPayment.id)) {
-      return;
-    }
-    try {
-      const res = await fetch('/api/khata-payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newPayment)
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        console.error('Sync error:', err.error);
-        return;
-      }
-      const stored = await res.json();
-      // Add to local state only if not already there
-      setKhataPayments((prev: any) => {
-        if (prev.some((p: any) => p.id === stored.id)) return prev;
-        return [stored, ...prev];
-      });
-      queueRefresh('Khata payment refresh');
-    } catch (e) {
-      console.error('Failed to sync khata payment', e);
-    }
+    if (!newPayment || !newPayment.id) return;
+    setKhataPayments((prev: any) => {
+      if (prev.some((p: any) => p.id === newPayment.id)) return prev;
+      return [newPayment, ...prev];
+    });
+    addToPendingSync('SAVE', 'khata-payments', newPayment);
+    processPendingSync();
   };
 
   const syncCustomerRate = async (data: any) => {
     const newRate = typeof data === 'function' ? data([])[0] : data;
-    if (!newRate || !newRate.customerName || !newRate.material) return;
-    try {
-      const res = await fetch('/api/customer-rates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRate)
-      });
-      if (!res.ok) return;
-      const stored = await res.json();
-      // Update or add in local state
-      setCustomerRates((prev: any) => {
-        const idx = prev.findIndex((r: any) => r.id === stored.id);
-        if (idx >= 0) {
-          return prev.map((r: any) => r.id === stored.id ? stored : r);
-        }
-        return [stored, ...prev];
-      });
-      queueRefresh('Customer rate refresh');
-    } catch (e) {
-      console.error('Failed to sync customer rate', e);
+    if (!newRate) return;
+    
+    // Generate a stable ID if missing (based on customer + material)
+    if (!newRate.id) {
+      newRate.id = `rate-${newRate.customerName}-${newRate.material}`.replace(/\s+/g, '-').toLowerCase();
     }
+
+    setCustomerRates((prev: any) => {
+      const idx = prev.findIndex((r: any) => 
+        r.id === newRate.id || 
+        ((r.customerName || '').trim().toUpperCase() === (newRate.customerName || '').trim().toUpperCase() && 
+         (r.material || '').trim().toUpperCase() === (newRate.material || '').trim().toUpperCase())
+      );
+      if (idx >= 0) {
+        // If we matched by name/material but IDs were different, keep the one we found
+        const existing = prev[idx];
+        newRate.id = existing.id;
+        return prev.map((r: any) => r.id === existing.id ? { ...r, ...newRate } : r);
+      }
+      return [newRate, ...prev];
+    });
+
+    addToPendingSync('SAVE', 'customer-rates', newRate);
+    processPendingSync();
   };
 
   const syncAssistant = async (data: any) => {
     const newAssistant = typeof data === 'function' ? data([])[0] : data;
-    try {
-      const res = await fetch('/api/assistants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAssistant)
-      });
-      if (!res.ok) return;
-      const stored = await res.json();
-      setAssistants(prev => {
-        if (prev.some(a => a.id === stored.id)) return prev;
-        return [...prev, stored];
-      });
-      queueRefresh('Assistant refresh');
-    } catch (e) {
-      console.error('Failed to sync assistant', e);
-    }
+    if (!newAssistant || !newAssistant.id) return;
+    setAssistants(prev => {
+      if (prev.some(a => a.id === newAssistant.id)) return prev;
+      return [...prev, newAssistant];
+    });
+    addToPendingSync('SAVE', 'assistants', newAssistant);
+    processPendingSync();
   };
 
   const syncKhataClient = async (clientData: string | Partial<KhataClient>) => {
-    const payload =
+    const payload: any =
       typeof clientData === 'string'
-        ? { name: clientData.trim(), applyGst: false }
+        ? { id: Date.now().toString(), name: clientData.trim(), applyGst: false }
         : {
-            id: clientData.id,
+            id: clientData.id || Date.now().toString(),
             name: clientData.name?.trim() || '',
             applyGst: Boolean(clientData.applyGst),
           };
 
     if (!payload.name) return;
-    try {
-      const res = await fetch('/api/khata-clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) return;
-      const stored = await res.json();
-      // Update or add
-      setKhataClients(prev => {
-        const idx = prev.findIndex(client => client.id === stored.id || client.name === stored.name);
-        if (idx >= 0) {
-          return prev.map((client, index) => (index === idx ? stored : client));
-        }
-        return [...prev, stored];
-      });
-      queueRefresh('Khata client refresh');
-    } catch (e) {
-      console.error('Failed to sync khata client', e);
-    }
-  };
-  const [readNotifications, setReadNotifications] = useState<string[]>([]);
+    setKhataClients(prev => {
+      const idx = prev.findIndex(client => 
+        client.id === payload.id || 
+        (client.name || '').trim().toUpperCase() === (payload.name || '').trim().toUpperCase()
+      );
+      if (idx >= 0) return prev.map((client, index) => (index === idx ? { ...client, ...payload } : client));
+      return [...prev, payload];
+    });
+    addToPendingSync('SAVE', 'khata-clients', payload);
+    processPendingSync();
+  };  const [readNotifications, setReadNotifications] = useState<string[]>([]);
   const [nativeNotifiedIds, setNativeNotifiedIds] = useState<string[]>([]);
   const [notificationSettings, setNotificationSettings] = useState({
     enableKhataReminders: true,
@@ -610,6 +650,8 @@ const syncKhataPayment = async (data: any) => {
     notifications,
     notificationSettings,
     isDayStarted,
+    pendingSyncCount: pendingSync.length,
+    syncNow: processPendingSync,
   };
 
   if (loading) {
@@ -638,9 +680,23 @@ const syncKhataPayment = async (data: any) => {
 
   return (
     <>
-      {isBackgroundSyncing && (
-        <div className="fixed right-4 top-4 z-[70] rounded-full border border-border-subtle bg-white/95 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-text-muted shadow-lg backdrop-blur">
-          Syncing Data
+      {(isBackgroundSyncing || pendingSync.length > 0) && (
+        <div className="fixed right-4 bottom-20 z-[70] flex flex-col items-end space-y-2">
+          {pendingSync.length > 0 && (
+            <button 
+              onClick={() => processPendingSync()}
+              className="group flex items-center rounded-xl border border-warning/20 bg-warning/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-warning shadow-lg backdrop-blur hover:bg-warning/20 transition-all"
+            >
+              <div className="mr-2 h-2 w-2 animate-pulse rounded-full bg-warning" />
+              {pendingSync.length} Pending Syncs • Sync Now
+            </button>
+          )}
+          {isBackgroundSyncing && (
+            <div className="rounded-full border border-border-subtle bg-white/95 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-text-muted shadow-lg backdrop-blur flex items-center">
+              <div className="mr-2 h-2 w-2 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+              Syncing Data
+            </div>
+          )}
         </div>
       )}
       <Layout 
