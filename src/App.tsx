@@ -406,7 +406,7 @@ export default function App() {
     const syncCustomers = async () => {
       for (const c of customers) {
         try {
-          const res = await pushWithoutTimeout('/api/customers', c);
+          const res = await pushWithoutTimeout('/api/customers', { ...c, updateFlag: true });
           if (res.ok) successCount++;
           else failedCount++;
         } catch {
@@ -522,6 +522,8 @@ export default function App() {
     setForceSyncResult({ success: successCount, failed: failedCount });
     setIsForceSyncing(false);
     setTimeout(() => setForceSyncResult(null), 5000);
+
+    await refreshData('Force sync refresh');
   };
 
 const syncCustomer = async (data: any) => {
