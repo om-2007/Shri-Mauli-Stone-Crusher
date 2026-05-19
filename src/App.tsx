@@ -105,7 +105,6 @@ export default function App() {
   const queuedRefreshLabelRef = useRef<string | null>(null);
 
   // Persist state changes to localStorage
-  useEffect(() => { localStorage.setItem('customers', JSON.stringify(customers)); }, [customers]);
   useEffect(() => { localStorage.setItem('maintenance', JSON.stringify(maintenance)); }, [maintenance]);
   useEffect(() => { localStorage.setItem('salaries', JSON.stringify(salaries)); }, [salaries]);
   useEffect(() => { localStorage.setItem('assistants', JSON.stringify(assistants)); }, [assistants]);
@@ -152,7 +151,20 @@ export default function App() {
     }
 
     if (successes.length > 0) {
-      setPendingSync(prev => prev.filter(item => !successes.includes(item.id)));
+      const nextPendingSync = queue.filter(item => !successes.includes(item.id));
+      setPendingSync(nextPendingSync);
+
+      const hasPendingCustomerSaves = nextPendingSync.some(
+        item => item.collection === 'customers' && item.action === 'SAVE'
+      );
+
+      if (!hasPendingCustomerSaves) {
+        localStorage.removeItem('customers');
+      }
+
+      void refreshData('Pending sync refresh').catch(error => {
+        console.error('Pending sync refresh failed', error);
+      });
     }
   };
 
@@ -219,6 +231,7 @@ export default function App() {
       mergedCustomers = mergedCustomers.filter((c: any) => !pendingDeletes.has(c.id));
 
       setCustomers(mergedCustomers);
+      localStorage.removeItem('customers');
       
       // Similar merge for other collections
       let mergedMaintenance = data.maintenance || [];
