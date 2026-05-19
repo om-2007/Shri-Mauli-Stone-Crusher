@@ -25,6 +25,19 @@ export function normalizeVehicleNumber(vehicle: string): string {
   return (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
 }
 
+export function normalizeComparableText(value: string): string {
+  return (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+export function resolveCanonicalText(input: string, candidates: string[]): string {
+  const trimmed = (input || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+
+  const normalizedInput = normalizeComparableText(trimmed);
+  const matched = candidates.find(candidate => normalizeComparableText(candidate) === normalizedInput);
+  return matched ? matched.trim().replace(/\s+/g, ' ') : trimmed;
+}
+
 export const EXCLUDED_VEHICLES = [
   'MH-10-Z-4644', 'MH-10-Z-4635', 'MH-10-AW-7200', 'MH-10-AW-7236',
   'MH-10-AW-9954', 'MH-10-CR-4014', 'MH-10-CR-4023', 'MH-10-CB-0045',

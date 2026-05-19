@@ -78,6 +78,19 @@ function normalizeVehicleNumber(vehicle: string) {
   return (vehicle || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().trim();
 }
 
+function normalizeComparableText(value: string) {
+  return (value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+}
+
+function resolveCanonicalText(input: string, candidates: string[]) {
+  const trimmed = (input || '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+
+  const normalizedInput = normalizeComparableText(trimmed);
+  const match = candidates.find(candidate => normalizeComparableText(candidate) === normalizedInput);
+  return match ? match.trim().replace(/\s+/g, ' ') : trimmed;
+}
+
 export async function initDb() {
   await pool.query(`CREATE TABLE IF NOT EXISTS customers (
     id TEXT PRIMARY KEY,
@@ -375,6 +388,249 @@ export async function getAppData() {
   };
 }
 
+function mapCustomerRow(customer: any) {
+  return {
+    id: customer.id,
+    vehicleNumber: customer.vehiclenumber || customer.vehicleNumber || '',
+    customerName: customer.customername || customer.customerName || '',
+    site: customer.site || '',
+    customerType: customer.customertype || customer.customerType || 'OTHER',
+    material: customer.material || '',
+    trips: customer.trips ? parseInt(customer.trips) : 1,
+    brass: customer.brass ? parseFloat(customer.brass) : 0,
+    weight: customer.weight ? parseFloat(customer.weight) : 0,
+    rateUnit: customer.rateunit || customer.rateUnit || 'PER_BRASS',
+    rate: customer.rate ? parseFloat(customer.rate) : 0,
+    amount: customer.amount ? parseFloat(decrypt(customer.amount)) : 0,
+    paidAmount: customer.paidamount ? parseFloat(decrypt(customer.paidamount)) : 0,
+    status: customer.status || 'PENDING',
+    date: customer.date,
+    addedBy: customer.addedby || customer.addedBy || '',
+    addedById: customer.addedbyid || customer.addedById || '',
+  };
+}
+
+function mapMaintenanceRow(entry: any) {
+  return {
+    id: entry.id,
+    type: entry.type || '',
+    description: entry.description || '',
+    amount: entry.amount ? parseFloat(decrypt(entry.amount)) : 0,
+    date: entry.date,
+    addedBy: entry.addedby || '',
+    addedById: entry.addedbyid || '',
+  };
+}
+
+function mapSalaryRow(entry: any) {
+  return {
+    id: entry.id,
+    workerName: entry.workername || '',
+    role: entry.role || '',
+    amount: entry.amount ? parseFloat(decrypt(entry.amount)) : 0,
+    month: entry.month || '',
+    date: entry.date,
+    addedBy: entry.addedby || '',
+    addedById: entry.addedbyid || '',
+  };
+}
+
+function mapKhataPaymentRow(entry: any) {
+  return {
+    id: entry.id,
+    customerName: entry.customername || '',
+    amount: entry.amount ? parseFloat(decrypt(entry.amount)) : 0,
+    paymentMethod: entry.paymentmethod || '',
+    description: entry.description || '',
+    date: entry.date,
+    addedBy: entry.addedby || '',
+    addedById: entry.addedbyid || '',
+  };
+}
+
+function mapCustomerRateRow(entry: any) {
+  return {
+    id: entry.id,
+    customerName: entry.customername || '',
+    material: entry.material || '',
+    rate: entry.rate ? parseFloat(decrypt(entry.rate)) : 0,
+    rateUnit: entry.rateunit || entry.rateUnit || 'PER_BRASS',
+  };
+}
+
+function mapKhataClientRow(entry: any) {
+  return {
+    id: entry.id,
+    name: entry.name || '',
+    applyGst: entry.applygst ?? entry.applyGst ?? false,
+  };
+}
+
+async function getOwnerProfileRow() {
+  const ownerProfile = await pool.query("SELECT * FROM owner_profile WHERE id = $1", [DEFAULT_OWNER.id]);
+  return ownerProfile.rows[0] || null;
+}
+
+async function getCurrentDayStartedValue() {
+  const systemState = await pool.query("SELECT value FROM system_state WHERE key = 'isDayStarted'");
+  return systemState.rows[0]?.value === 'true';
+}
+
+export async function getBootstrapData() {
+  await safeInitDb();
+  await autoUpdateDayStatus();
+
+  const [assistants, ownerProfile, isDayStarted] = await Promise.all([
+    pool.query("SELECT * FROM assistants"),
+    getOwnerProfileRow(),
+    getCurrentDayStartedValue(),
+  ]);
+
+  return {
+    assistants: assistants.rows,
+    ownerProfile,
+    notificationSettings: {
+      enableKhataReminders: ownerProfile?.enablekhatareminders ?? true,
+      enableMaintenanceAlerts: ownerProfile?.enablemaintenancealerts ?? true,
+    },
+    isDayStarted,
+  };
+}
+
+export async function getScopedAppData(scope: string) {
+  await safeInitDb();
+  await autoUpdateDayStatus();
+
+  const base = await getBootstrapData();
+
+  switch (scope) {
+    case 'dashboard': {
+      const [
+        customers,
+        maintenance,
+        salaries,
+        khataPaymentsResult,
+        customerRates,
+        khataClients,
+      ] = await Promise.all([
+        pool.query("SELECT * FROM customers ORDER BY date DESC LIMIT 250"),
+        pool.query("SELECT * FROM maintenance ORDER BY date DESC LIMIT 250"),
+        pool.query("SELECT * FROM salaries ORDER BY date DESC LIMIT 250"),
+        pool.query("SELECT * FROM khata_payments ORDER BY date DESC LIMIT 250").catch(async () => {
+          const fallback = await pool.query("SELECT * FROM khata_logs ORDER BY date DESC LIMIT 250").catch(() => ({ rows: [] }));
+          return fallback;
+        }),
+        pool.query("SELECT * FROM customer_rates"),
+        pool.query("SELECT * FROM khata_clients"),
+      ]);
+
+      return {
+        ...base,
+        customers: customers.rows.map(mapCustomerRow),
+        maintenance: maintenance.rows.map(mapMaintenanceRow),
+        salaries: salaries.rows.map(mapSalaryRow),
+        khataPayments: khataPaymentsResult.rows.map(mapKhataPaymentRow),
+        customerRates: customerRates.rows.map(mapCustomerRateRow),
+        khataClients: khataClients.rows.map(mapKhataClientRow).filter((entry: any) => entry.name),
+      };
+    }
+    case 'customers': {
+      const [customers, customerRates, khataClients, khataPayments] = await Promise.all([
+        pool.query("SELECT * FROM customers ORDER BY date DESC"),
+        pool.query("SELECT * FROM customer_rates"),
+        pool.query("SELECT * FROM khata_clients"),
+        pool.query("SELECT * FROM khata_payments ORDER BY date DESC").catch(async () => {
+          const fallback = await pool.query("SELECT * FROM khata_logs ORDER BY date DESC").catch(() => ({ rows: [] }));
+          return fallback;
+        }),
+      ]);
+
+      return {
+        ...base,
+        customers: customers.rows.map(mapCustomerRow),
+        customerRates: customerRates.rows.map(mapCustomerRateRow),
+        khataClients: khataClients.rows.map(mapKhataClientRow).filter((entry: any) => entry.name),
+        khataPayments: khataPayments.rows.map(mapKhataPaymentRow),
+      };
+    }
+    case 'assistant-dashboard': {
+      const [customers, maintenance, customerRates, khataClients, khataPayments] = await Promise.all([
+        pool.query("SELECT * FROM customers ORDER BY date DESC LIMIT 250"),
+        pool.query("SELECT * FROM maintenance ORDER BY date DESC LIMIT 250"),
+        pool.query("SELECT * FROM customer_rates"),
+        pool.query("SELECT * FROM khata_clients"),
+        pool.query("SELECT * FROM khata_payments ORDER BY date DESC LIMIT 250").catch(async () => {
+          const fallback = await pool.query("SELECT * FROM khata_logs ORDER BY date DESC LIMIT 250").catch(() => ({ rows: [] }));
+          return fallback;
+        }),
+      ]);
+
+      return {
+        ...base,
+        customers: customers.rows.map(mapCustomerRow),
+        maintenance: maintenance.rows.map(mapMaintenanceRow),
+        customerRates: customerRates.rows.map(mapCustomerRateRow),
+        khataClients: khataClients.rows.map(mapKhataClientRow).filter((entry: any) => entry.name),
+        khataPayments: khataPayments.rows.map(mapKhataPaymentRow),
+      };
+    }
+    case 'maintenance': {
+      const maintenance = await pool.query("SELECT * FROM maintenance ORDER BY date DESC");
+      return {
+        ...base,
+        maintenance: maintenance.rows.map(mapMaintenanceRow),
+      };
+    }
+    case 'salaries': {
+      const salaries = await pool.query("SELECT * FROM salaries ORDER BY date DESC");
+      return {
+        ...base,
+        salaries: salaries.rows.map(mapSalaryRow),
+      };
+    }
+    case 'khata': {
+      const [customers, customerRates, khataClients, khataPayments] = await Promise.all([
+        pool.query("SELECT * FROM customers ORDER BY date DESC"),
+        pool.query("SELECT * FROM customer_rates"),
+        pool.query("SELECT * FROM khata_clients"),
+        pool.query("SELECT * FROM khata_payments ORDER BY date DESC").catch(async () => {
+          const fallback = await pool.query("SELECT * FROM khata_logs ORDER BY date DESC").catch(() => ({ rows: [] }));
+          return fallback;
+        }),
+      ]);
+
+      return {
+        ...base,
+        customers: customers.rows.map(mapCustomerRow),
+        customerRates: customerRates.rows.map(mapCustomerRateRow),
+        khataClients: khataClients.rows.map(mapKhataClientRow).filter((entry: any) => entry.name),
+        khataPayments: khataPayments.rows.map(mapKhataPaymentRow),
+      };
+    }
+    case 'staff': {
+      const [assistants, customers, maintenance] = await Promise.all([
+        pool.query("SELECT * FROM assistants"),
+        pool.query("SELECT id, addedById FROM customers"),
+        pool.query("SELECT id, addedById FROM maintenance"),
+      ]);
+
+      return {
+        ...base,
+        assistants: assistants.rows,
+        customers: customers.rows.map((entry: any) => ({ id: entry.id, addedById: entry.addedbyid || entry.addedById || '' })),
+        maintenance: maintenance.rows.map((entry: any) => ({ id: entry.id, addedById: entry.addedbyid || entry.addedById || '' })),
+      };
+    }
+    case 'settings': {
+      return {
+        ...base,
+      };
+    }
+    default:
+      return getAppData();
+  }
+}
+
 export async function getSystemState() {
   await safeInitDb();
   const systemState = await pool.query("SELECT * FROM system_state");
@@ -487,6 +743,8 @@ export async function saveCustomer(payload: any) {
 
   const trimmedVehicleNumber = (vehicleNumber || '').trim();
   const trimmedCustomerName = (customerName || '').trim();
+  const trimmedMaterial = (material || '').trim();
+  const trimmedSite = (site || '').trim();
 
   if (!trimmedVehicleNumber || !trimmedCustomerName) {
     throw new Error('Vehicle number and customer name are required');
@@ -494,10 +752,12 @@ export async function saveCustomer(payload: any) {
 
   const normalizedVehicleNumber = normalizeVehicleNumber(trimmedVehicleNumber);
   let resolvedCustomerName = trimmedCustomerName;
+  let resolvedMaterial = trimmedMaterial;
+  let resolvedSite = trimmedSite;
 
   if (normalizedVehicleNumber) {
     const existingCustomers = await pool.query(
-      'SELECT id, customerName, vehicleNumber FROM customers WHERE id <> $1',
+      'SELECT id, customerName, vehicleNumber, material, site FROM customers WHERE id <> $1',
       [id || '']
     );
     const matchedCustomer = existingCustomers.rows.find(
@@ -509,6 +769,20 @@ export async function saveCustomer(payload: any) {
     if (matchedCustomer && !id) {
       resolvedCustomerName = (matchedCustomer.customername || matchedCustomer.customerName || '').trim();
     }
+
+    const canonicalCustomer = existingCustomers.rows
+      .map((customer: any) => customer.customername || customer.customerName || '')
+      .filter(Boolean);
+    const canonicalMaterial = existingCustomers.rows
+      .map((customer: any) => customer.material || '')
+      .filter(Boolean);
+    const canonicalSite = existingCustomers.rows
+      .map((customer: any) => customer.site || '')
+      .filter(Boolean);
+
+    resolvedCustomerName = resolveCanonicalText(resolvedCustomerName, canonicalCustomer);
+    resolvedMaterial = resolveCanonicalText(resolvedMaterial, canonicalMaterial);
+    resolvedSite = resolveCanonicalText(resolvedSite, canonicalSite);
   }
 
   const date = new Date().toISOString();
@@ -522,9 +796,9 @@ export async function saveCustomer(payload: any) {
       [
         trimmedVehicleNumber,
         resolvedCustomerName,
-        site || '',
+        resolvedSite,
         customerType || 'OTHER',
-        material || '',
+        resolvedMaterial,
         trips || '1',
         brass || '0',
         weight || '0',
@@ -540,7 +814,7 @@ export async function saveCustomer(payload: any) {
       ]
     );
 
-    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
+    return { id, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: resolvedSite, customerType, material: resolvedMaterial, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
   }
 
   const newId = Date.now().toString();
@@ -551,9 +825,9 @@ export async function saveCustomer(payload: any) {
       newId,
       trimmedVehicleNumber,
       resolvedCustomerName,
-      site || '',
+      resolvedSite,
       customerType || 'OTHER',
-      material || '',
+      resolvedMaterial,
       trips || '1',
       brass || '0',
       weight || '0',
@@ -568,7 +842,7 @@ export async function saveCustomer(payload: any) {
     ]
   );
 
-  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: site || '', customerType, material, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
+  return { id: newId, vehicleNumber: trimmedVehicleNumber, customerName: resolvedCustomerName, site: resolvedSite, customerType, material: resolvedMaterial, trips, brass, weight, rateUnit: rateUnit || 'PER_BRASS', rate, amount, paidAmount, status, date, addedBy, addedById };
 }
 
 export async function updateCustomer(id: string, payload: any) {
@@ -683,27 +957,33 @@ export async function saveCustomerRate(payload: any) {
     throw new Error('Customer name and material required');
   }
 
+  const customerRows = await pool.query('SELECT customerName, material FROM customer_rates');
+  const existingCustomerNames = customerRows.rows.map((row: any) => row.customername || row.customerName || '').filter(Boolean);
+  const existingMaterials = customerRows.rows.map((row: any) => row.material || '').filter(Boolean);
+  const resolvedCustomerName = resolveCanonicalText(customerName, existingCustomerNames);
+  const resolvedMaterial = resolveCanonicalText(material, existingMaterials);
+
   const existing = await pool.query(
     'SELECT * FROM customer_rates WHERE customerName = $1 AND material = $2',
-    [customerName, material]
+    [resolvedCustomerName, resolvedMaterial]
   );
 
   if (existing.rows.length > 0) {
     await pool.query(
       'UPDATE customer_rates SET rate = $1, rateUnit = $2 WHERE customerName = $3 AND material = $4',
-      [rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS', customerName, material]
+      [rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS', resolvedCustomerName, resolvedMaterial]
     );
 
-    return { id: existing.rows[0].id, customerName, material, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
+    return { id: existing.rows[0].id, customerName: resolvedCustomerName, material: resolvedMaterial, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
   }
 
   const id = Date.now().toString();
   await pool.query(
     'INSERT INTO customer_rates (id, customerName, material, rate, rateUnit) VALUES ($1, $2, $3, $4, $5)',
-    [id, customerName, material, rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS']
+    [id, resolvedCustomerName, resolvedMaterial, rate ? encrypt(String(rate)) : '', rateUnit || 'PER_BRASS']
   );
 
-  return { id, customerName, material, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
+  return { id, customerName: resolvedCustomerName, material: resolvedMaterial, rate: rate || 0, rateUnit: rateUnit || 'PER_BRASS' };
 }
 
 export async function saveAssistant(payload: any) {
@@ -728,12 +1008,18 @@ export async function saveKhataClient(payload: any) {
     throw new Error('Khata client name required');
   }
 
+  const existingClients = await pool.query('SELECT id, name FROM khata_clients');
+  const resolvedName = resolveCanonicalText(
+    normalizedName,
+    existingClients.rows.map((row: any) => row.name || '').filter(Boolean)
+  );
+
   // Check if a client with this name already exists (if we don't have an ID)
   let nextId = id;
   if (!nextId) {
     const existing = await pool.query(
       'SELECT id FROM khata_clients WHERE UPPER(name) = UPPER($1)',
-      [normalizedName]
+      [resolvedName]
     );
     if (existing.rows.length > 0) {
       nextId = existing.rows[0].id;
@@ -748,8 +1034,8 @@ export async function saveKhataClient(payload: any) {
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        applyGst = EXCLUDED.applyGst`,
-    [nextId, normalizedName, Boolean(applyGst)]
+    [nextId, resolvedName, Boolean(applyGst)]
   );
 
-  return { id: nextId, name: normalizedName, applyGst: Boolean(applyGst) };
+  return { id: nextId, name: resolvedName, applyGst: Boolean(applyGst) };
 }

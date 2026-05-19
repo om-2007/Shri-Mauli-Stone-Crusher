@@ -15,6 +15,42 @@ import Layout from './components/Layout';
 import OwnerDashboard from './components/OwnerDashboard';
 import AssistantDashboard from './components/AssistantDashboard';
 
+const EMPTY_NOTIFICATION_SETTINGS = {
+  enableKhataReminders: true,
+  enableMaintenanceAlerts: true,
+};
+
+const getScopeForTab = (role: UserRole | undefined, tab: string) => {
+  if (!role) return 'bootstrap';
+  if (role === 'ASSISTANT') {
+    if (tab === 'dashboard') return 'assistant-dashboard';
+    if (tab === 'customers') return 'customers';
+    if (tab === 'maintenance') return 'maintenance';
+    if (tab === 'staff') return 'staff';
+    if (tab === 'settings') return 'settings';
+    return 'customers';
+  }
+
+  switch (tab) {
+    case 'dashboard':
+      return 'dashboard';
+    case 'customers':
+      return 'customers';
+    case 'maintenance':
+      return 'maintenance';
+    case 'salaries':
+      return 'salaries';
+    case 'khata':
+      return 'khata';
+    case 'staff':
+      return 'staff';
+    case 'settings':
+      return 'settings';
+    default:
+      return 'dashboard';
+  }
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -100,6 +136,8 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [setupError, setSetupError] = useState('');
+  const [loadedScopes, setLoadedScopes] = useState<string[]>([]);
+  const [activeScopeLoading, setActiveScopeLoading] = useState(false);
   const [isBackgroundSyncing, startBackgroundSyncTransition] = useTransition();
   const refreshPromiseRef = useRef<Promise<any> | null>(null);
   const queuedRefreshLabelRef = useRef<string | null>(null);
@@ -115,6 +153,8 @@ export default function App() {
   useEffect(() => { localStorage.setItem('isDayStarted', String(isDayStarted)); }, [isDayStarted]);
   useEffect(() => { localStorage.setItem('pendingSync', JSON.stringify(pendingSync)); }, [pendingSync]);
   useEffect(() => { if (currentUser) localStorage.setItem('currentUser', JSON.stringify(currentUser)); }, [currentUser]);
+
+  const activeScope = getScopeForTab(currentUser?.role, activeTab);
 
   const addToPendingSync = (action: string, collection: string, data: any) => {
     const id = data.id || Date.now().toString();
@@ -214,44 +254,52 @@ export default function App() {
     }
   };
 
-  const applyServerData = (data: any) => {
+  const applyServerData = (data: any, scope?: string) => {
     startBackgroundSyncTransition(() => {
-      // Merge logic: Server data + Pending local SAVEs - Pending local DELETEs
-      let mergedCustomers = data.customers || [];
-      
-      // Re-apply pending SAVEs that might not be on server yet
-      pendingSync.filter(p => p.collection === 'customers' && p.action === 'SAVE').forEach(p => {
-        const idx = mergedCustomers.findIndex((c: any) => c.id === p.data.id);
-        if (idx >= 0) mergedCustomers[idx] = { ...mergedCustomers[idx], ...p.data };
-        else mergedCustomers = [p.data, ...mergedCustomers];
-      });
+      if ('customers' in data) {
+        let mergedCustomers = data.customers || [];
 
-      // Remove pending DELETEs
-      const pendingDeletes = new Set(pendingSync.filter(p => p.collection === 'customers' && p.action === 'DELETE').map(p => p.data.id));
-      mergedCustomers = mergedCustomers.filter((c: any) => !pendingDeletes.has(c.id));
+        pendingSync.filter(p => p.collection === 'customers' && p.action === 'SAVE').forEach(p => {
+          const idx = mergedCustomers.findIndex((c: any) => c.id === p.data.id);
+          if (idx >= 0) mergedCustomers[idx] = { ...mergedCustomers[idx], ...p.data };
+          else mergedCustomers = [p.data, ...mergedCustomers];
+        });
 
-      setCustomers(mergedCustomers);
-      localStorage.removeItem('customers');
-      
-      // Similar merge for other collections
-      let mergedMaintenance = data.maintenance || [];
-      pendingSync.filter(p => p.collection === 'maintenance' && p.action === 'SAVE').forEach(p => {
-        if (!mergedMaintenance.some((m: any) => m.id === p.data.id)) mergedMaintenance = [p.data, ...mergedMaintenance];
-      });
-      setMaintenance(mergedMaintenance);
+        const pendingDeletes = new Set(
+          pendingSync
+            .filter(p => p.collection === 'customers' && p.action === 'DELETE')
+            .map(p => p.data.id)
+        );
+        mergedCustomers = mergedCustomers.filter((c: any) => !pendingDeletes.has(c.id));
 
-      setSalaries(data.salaries || []);
-      setKhataPayments(data.khataPayments || []);
-      setAssistants(data.assistants || []);
-      setCustomerRates(data.customerRates || []);
-      setKhataClients(data.khataClients || []);
-      setOwnerProfile(data.ownerProfile || DEFAULT_OWNER);
+        setCustomers(mergedCustomers);
+        localStorage.removeItem('customers');
+      }
+
+      if ('maintenance' in data) {
+        let mergedMaintenance = data.maintenance || [];
+        pendingSync.filter(p => p.collection === 'maintenance' && p.action === 'SAVE').forEach(p => {
+          if (!mergedMaintenance.some((m: any) => m.id === p.data.id)) mergedMaintenance = [p.data, ...mergedMaintenance];
+        });
+        setMaintenance(mergedMaintenance);
+      }
+
+      if ('salaries' in data) setSalaries(data.salaries || []);
+      if ('khataPayments' in data) setKhataPayments(data.khataPayments || []);
+      if ('assistants' in data) setAssistants(data.assistants || []);
+      if ('customerRates' in data) setCustomerRates(data.customerRates || []);
+      if ('khataClients' in data) setKhataClients(data.khataClients || []);
+      if ('ownerProfile' in data) setOwnerProfile(data.ownerProfile || DEFAULT_OWNER);
       setSetupError('');
-      setNotificationSettings(data.notificationSettings || {
-        enableKhataReminders: true,
-        enableMaintenanceAlerts: true,
-      });
-      setIsDayStarted(data.isDayStarted || false);
+      if ('notificationSettings' in data) {
+        setNotificationSettings(data.notificationSettings || EMPTY_NOTIFICATION_SETTINGS);
+      }
+      if ('isDayStarted' in data) {
+        setIsDayStarted(Boolean(data.isDayStarted));
+      }
+      if (scope) {
+        setLoadedScopes(prev => (prev.includes(scope) ? prev : [...prev, scope]));
+      }
 
       const saved = localStorage.getItem('currentUser');
       if (saved) {
@@ -267,39 +315,39 @@ export default function App() {
     });
   };
 
-  const runRefreshData = async (label: string) => {
+  const runRefreshData = async (label: string, scope = activeScope) => {
     try {
-      const res = await fetchWithTimeout('/api/data', { cache: 'no-store' }, 20000);
+      const res = await fetchWithTimeout(`/api/data?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' }, scope === 'bootstrap' ? 8000 : 15000);
       if (!res) {
         throw new Error('Request timeout');
       }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await parseJsonResponse(res, label);
-      applyServerData(data);
+      applyServerData(data, scope);
       return data;
     } catch (err: any) {
-      if (err.message !== 'Timeout') {
-        console.error(`[REFRESH] ${label} failed:`, err);
-      }
+      setSetupError(scope === 'bootstrap' ? 'Unable to load app data right now.' : setupError);
+      console.error(`[REFRESH] ${label} failed:`, err);
       return null;
     }
   };
 
-  const refreshData = async (label: string) => {
+  const refreshData = async (label: string, scope = activeScope) => {
     if (refreshPromiseRef.current) {
-      queuedRefreshLabelRef.current = label;
+      queuedRefreshLabelRef.current = `${label}::${scope}`;
       return refreshPromiseRef.current;
     }
 
-    const request = runRefreshData(label)
+    const request = runRefreshData(label, scope)
       .finally(async () => {
         refreshPromiseRef.current = null;
-        const queuedLabel = queuedRefreshLabelRef.current;
+        const queuedToken = queuedRefreshLabelRef.current;
         queuedRefreshLabelRef.current = null;
 
-        if (queuedLabel) {
+        if (queuedToken) {
+          const [queuedLabel, queuedScope] = queuedToken.split('::');
           try {
-            await refreshData(queuedLabel);
+            await refreshData(queuedLabel, queuedScope || activeScope);
           } catch (error) {
             console.error('Queued refresh failed', error);
           }
@@ -310,8 +358,8 @@ export default function App() {
     return request;
   };
 
-  const queueRefresh = (label: string) => {
-    void refreshData(label).catch(error => {
+  const queueRefresh = (label: string, scope = activeScope) => {
+    void refreshData(label, scope).catch(error => {
       console.error(`${label} failed`, error);
     });
   };
@@ -327,11 +375,23 @@ export default function App() {
 
   // Fetch data on mount
   useEffect(() => {
-    refreshData('Initial data fetch')
+    refreshData('Bootstrap fetch', 'bootstrap')
       .finally(() => {
         setLoading(false);
       });
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const scope = getScopeForTab(currentUser.role, activeTab);
+    if (loadedScopes.includes(scope)) return;
+
+    setActiveScopeLoading(true);
+    refreshData(`Load ${scope}`, scope).finally(() => {
+      setActiveScopeLoading(false);
+    });
+  }, [currentUser, activeTab, loadedScopes]);
 
   // Poll day status every 60 seconds to sync with automatic start/end
   useEffect(() => {
@@ -536,7 +596,7 @@ export default function App() {
     setIsForceSyncing(false);
     setTimeout(() => setForceSyncResult(null), 5000);
 
-    await refreshData('Force sync refresh');
+    await refreshData('Force sync refresh', activeScope);
   };
 
 const syncCustomer = async (data: any) => {
@@ -654,10 +714,7 @@ const syncCustomer = async (data: any) => {
     processPendingSync();
   };  const [readNotifications, setReadNotifications] = useState<string[]>([]);
   const [nativeNotifiedIds, setNativeNotifiedIds] = useState<string[]>([]);
-  const [notificationSettings, setNotificationSettings] = useState({
-    enableKhataReminders: true,
-    enableMaintenanceAlerts: true,
-  });
+  const [notificationSettings, setNotificationSettings] = useState(EMPTY_NOTIFICATION_SETTINGS);
 
   // Auto-generate notifications based on data
   const notifications = useMemo(() => {
@@ -863,6 +920,13 @@ const syncCustomer = async (data: any) => {
         isForceSyncing={isForceSyncing}
         forceSyncResult={forceSyncResult}
       >
+        {activeScopeLoading && (
+          <div className="px-6 pt-6">
+            <div className="rounded-2xl border border-border-subtle bg-white/80 px-4 py-3 text-xs font-black uppercase tracking-[0.16em] text-text-muted shadow-sm">
+              Loading visible data...
+            </div>
+          </div>
+        )}
         {shouldUseOwnerDashboard ? (
           <OwnerDashboard 
             state={appState} 

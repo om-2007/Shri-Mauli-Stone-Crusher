@@ -3,6 +3,8 @@ import {
   autoUpdateDayStatus,
   deleteCollectionRecord,
   getAppData,
+  getBootstrapData,
+  getScopedAppData,
   getSystemState,
   saveAssistant,
   saveCustomer,
@@ -37,11 +39,19 @@ async function getSegments(context: RouteContext) {
   return params.segments || [];
 }
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const segments = await getSegments(context);
+  const { searchParams } = new URL(request.url);
+  const scope = searchParams.get('scope') || '';
 
   try {
     if (segments.length === 1 && segments[0] === 'data') {
+      if (scope === 'bootstrap') {
+        return NextResponse.json(await getBootstrapData());
+      }
+      if (scope) {
+        return NextResponse.json(await getScopedAppData(scope));
+      }
       return NextResponse.json(await getAppData());
     }
 
@@ -70,6 +80,7 @@ export async function GET(_request: Request, context: RouteContext) {
         notificationSettings: { enableKhataReminders: true, enableMaintenanceAlerts: true },
         isDayStarted: false,
         degraded: true,
+        scope: scope || 'all',
       }, { status: 200 });
     }
 

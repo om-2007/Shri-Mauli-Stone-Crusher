@@ -5,7 +5,7 @@ import {
   MapPin, Truck, UserCircle, Layers, CheckCircle2, Save, X, Settings, Lock, Trash2, Clock
 } from 'lucide-react';
 import { AppState, CustomerEntry, MaintenanceEntry, CustomerType, RateUnit } from '../types';
-import { formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES } from '../lib/utils';
+import { formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES, resolveCanonicalText } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import Modal from './Modal';
 
@@ -44,6 +44,10 @@ export default function AssistantDashboard({
     setCustomerTypeFilter('ALL');
   }, [activeTab]);
 
+  useEffect(() => {
+    setVisibleCustomerCount(25);
+  }, [searchTerm, customerTypeFilter, activeTab]);
+
   const filteredCustomers = useMemo(() => {
     let result = state.customers.filter(c => (c.date || '').slice(0, 10) === todayKey);
 
@@ -65,6 +69,19 @@ export default function AssistantDashboard({
     );
   }, [state.customers, searchTerm, customerTypeFilter, todayKey]);
 
+  // Form States
+  const [custName, setCustName] = useState('');
+  const [custType, setCustType] = useState<CustomerType>('OTHER');
+  const [vehicle, setVehicle] = useState('');
+  const [site, setSite] = useState('');
+  const [material, setMaterial] = useState('');
+  const [trips, setTrips] = useState('1');
+  const [brass, setBrass] = useState('');
+  const [weight, setWeight] = useState('');
+  const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
+  const [asstRate, setAsstRate] = useState('');
+  const [visibleCustomerCount, setVisibleCustomerCount] = useState(25);
+
   const filteredMaintenance = useMemo(() => {
     // Only show maintenance records added by this assistant
     const currentUserId = state.currentUser?.id;
@@ -80,21 +97,36 @@ export default function AssistantDashboard({
     );
   }, [state.maintenance, searchTerm, state.currentUser?.id, todayKey]);
 
-  // Form States
-  const [custName, setCustName] = useState('');
-  const [custType, setCustType] = useState<CustomerType>('OTHER');
-  const [vehicle, setVehicle] = useState('');
-  const [site, setSite] = useState('');
-  const [material, setMaterial] = useState('');
-  const [trips, setTrips] = useState('1');
-  const [brass, setBrass] = useState('');
-  const [weight, setWeight] = useState('');
-  const [rateUnit, setRateUnit] = useState<RateUnit>('PER_BRASS');
-  const [asstRate, setAsstRate] = useState('');
+  const visibleCustomers = useMemo(
+    () => filteredCustomers.slice(0, visibleCustomerCount),
+    [filteredCustomers, visibleCustomerCount]
+  );
 
   const uniqueKhataCustomers = useMemo(() => 
     Array.from(new Set(state.khataClients.map(client => client.name))),
     [state.khataClients]
+  );
+
+  const knownCustomerNames = useMemo(
+    () => Array.from(new Set([
+      ...state.customers.map(customer => customer.customerName),
+      ...state.khataClients.map(client => client.name),
+      ...state.customerRates.map(rate => rate.customerName),
+    ].filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers, state.khataClients, state.customerRates]
+  );
+
+  const knownMaterials = useMemo(
+    () => Array.from(new Set([
+      ...state.customers.map(customer => customer.material),
+      ...state.customerRates.map(rate => rate.material),
+    ].filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers, state.customerRates]
+  );
+
+  const knownSites = useMemo(
+    () => Array.from(new Set(state.customers.map(customer => customer.site).filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers]
   );
 
   const availableKhataMaterials = useMemo(() => 
@@ -141,11 +173,9 @@ export default function AssistantDashboard({
 
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedVehicle = normalizeVehicleNumber(vehicle);
-    
-    // CRITICAL: Always prioritize the manually entered name (custName).
-    // Do NOT fallback to matchedCustomer if user has typed something.
-    const resolvedCustomerName = custName.trim();
+    const resolvedCustomerName = resolveCanonicalText(custName, knownCustomerNames);
+    const resolvedMaterial = resolveCanonicalText(material, knownMaterials);
+    const resolvedSite = resolveCanonicalText(site, knownSites);
     
     if (!resolvedCustomerName) {
       alert('Customer name is required');
@@ -155,10 +185,10 @@ export default function AssistantDashboard({
     let finalRate = 0;
     if (custType === 'REGULAR') {
       // Check Khata for automatic rate assignment in background
-      if (resolvedCustomerName && material.trim()) {
+      if (resolvedCustomerName && resolvedMaterial) {
         const match = state.customerRates.find(
           r => r.customerName.trim().toUpperCase() === resolvedCustomerName.toUpperCase() &&
-               r.material.trim().toUpperCase() === material.trim().toUpperCase()
+               r.material.trim().toUpperCase() === resolvedMaterial.toUpperCase()
         );
         if (match) {
           finalRate = match.rate;
@@ -179,9 +209,9 @@ export default function AssistantDashboard({
       date: new Date().toISOString().split('T')[0],
       vehicleNumber: vehicle,
       customerName: resolvedCustomerName,
-      site: site.trim(),
+      site: resolvedSite,
       customerType: custType,
-      material: material,
+      material: resolvedMaterial,
       trips: tripsNum,
       brass: brassNum,
       weight: weightNum,
@@ -276,7 +306,7 @@ export default function AssistantDashboard({
               </tr>
             </thead>
             <tbody className="divide-y divide-border-subtle">
-              {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
+              {(compact ? filteredCustomers.slice(0, 15) : visibleCustomers).map(c => (
                 <tr key={c.id}>
                   <td className="px-6 py-4 text-xs font-bold text-text-muted">{formatDate(c.date)}</td>
                   <td className="px-6 py-4 text-xs font-bold text-text-main">{c.vehicleNumber}</td>
@@ -293,7 +323,7 @@ export default function AssistantDashboard({
           </table>
         </div>
         <div className="md:hidden space-y-3 p-4">
-          {(compact ? filteredCustomers.slice(0, 15) : filteredCustomers).map(c => (
+          {(compact ? filteredCustomers.slice(0, 15) : visibleCustomers).map(c => (
             <div key={c.id} className="bg-bg-surface rounded-xl border border-border-subtle p-4">
               <div className="flex justify-between items-start mb-2">
                 <div>
@@ -311,6 +341,16 @@ export default function AssistantDashboard({
             </div>
           ))}
         </div>
+        {!compact && filteredCustomers.length > visibleCustomerCount && (
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={() => setVisibleCustomerCount(prev => prev + 25)}
+              className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-text-main transition hover:bg-white"
+            >
+              Load More Records
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -506,8 +546,8 @@ export default function AssistantDashboard({
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Name</label>
             <div className="relative">
               <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-              <input 
-                type="text" required value={custName} onChange={e => setCustName(e.target.value)}
+                <input 
+                  type="text" required value={custName} onChange={e => setCustName(resolveCanonicalText(e.target.value, knownCustomerNames))}
                 list="asst-khata-customers"
                 className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
                 placeholder="Enter Client Name"
@@ -526,7 +566,7 @@ export default function AssistantDashboard({
               <input 
                 type="text"
                 value={site}
-                onChange={e => setSite(e.target.value)}
+                onChange={e => setSite(resolveCanonicalText(e.target.value, knownSites))}
                 className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
                 placeholder="Delivery Site / Location"
               />
@@ -535,7 +575,7 @@ export default function AssistantDashboard({
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material</label>
             <input 
-              type="text" required value={material} onChange={e => setMaterial(e.target.value)}
+              type="text" required value={material} onChange={e => setMaterial(resolveCanonicalText(e.target.value, knownMaterials))}
               list="asst-khata-materials"
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg focus:ring-1 focus:ring-primary outline-none transition-all font-bold uppercase"
               placeholder="e.g. 20mm aggregate"

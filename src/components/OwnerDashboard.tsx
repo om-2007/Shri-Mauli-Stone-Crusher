@@ -11,7 +11,7 @@ import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Legend
 } from 'recharts';
 import { AppState, CustomerEntry, MaintenanceEntry, SalaryEntry, User, CustomerType, CustomerRate, KhataPayment, NotificationSettings, KhataClient, RateUnit } from '../types';
-import { formatCurrency, formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES } from '../lib/utils';
+import { formatCurrency, formatDate, cn, normalizeVehicleNumber, EXCLUDED_VEHICLES, resolveCanonicalText } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import SettingsContent from './SettingsContent';
 import Modal from './Modal';
@@ -78,6 +78,7 @@ export default function OwnerDashboard({
   const [custType, setCustType] = useState<CustomerType>('OTHER');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingKhataId, setEditingKhataId] = useState<string | null>(null);
+  const [visibleCustomerCount, setVisibleCustomerCount] = useState(30);
 
   // Salary Form States
   const [workerName, setWorkerName] = useState('');
@@ -124,11 +125,14 @@ export default function OwnerDashboard({
 
   const handleAddKhata = (e: React.FormEvent) => {
     e.preventDefault();
+    const resolvedKhataCustomer = resolveCanonicalText(khataCustName, knownCustomerNames);
+    const resolvedKhataMaterial = resolveCanonicalText(khataMaterial, knownMaterials);
+
     if (editingKhataId) {
       const updated = {
         id: editingKhataId,
-        customerName: khataCustName,
-        material: khataMaterial,
+        customerName: resolvedKhataCustomer,
+        material: resolvedKhataMaterial,
         rate: parseFloat(khataRate) || 0,
         rateUnit: khataRateUnit,
       };
@@ -136,8 +140,8 @@ export default function OwnerDashboard({
     } else {
       const newRate = {
         id: Math.random().toString(36).substr(2, 9),
-        customerName: khataCustName,
-        material: khataMaterial,
+        customerName: resolvedKhataCustomer,
+        material: resolvedKhataMaterial,
         rate: parseFloat(khataRate) || 0,
         rateUnit: khataRateUnit,
       };
@@ -166,6 +170,28 @@ export default function OwnerDashboard({
       (client.name || '').trim().toUpperCase() === selectedKhataClient.trim().toUpperCase()
     ) || null,
     [state.khataClients, selectedKhataClient]
+  );
+
+  const knownCustomerNames = useMemo(
+    () => Array.from(new Set([
+      ...state.customers.map(customer => customer.customerName),
+      ...state.khataClients.map(client => client.name),
+      ...state.customerRates.map(rate => rate.customerName),
+    ].filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers, state.khataClients, state.customerRates]
+  );
+
+  const knownMaterials = useMemo(
+    () => Array.from(new Set([
+      ...state.customers.map(customer => customer.material),
+      ...state.customerRates.map(rate => rate.material),
+    ].filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers, state.customerRates]
+  );
+
+  const knownSites = useMemo(
+    () => Array.from(new Set(state.customers.map(customer => customer.site).filter((value): value is string => Boolean(value && value.trim())))),
+    [state.customers]
   );
 
   const shouldApplyGst = (customerName: string) =>
@@ -575,7 +601,7 @@ export default function OwnerDashboard({
 
    const handleAddKhataClient = async (e: React.FormEvent) => {
      e.preventDefault();
-     const trimmed = newKhataClientName.trim();
+     const trimmed = resolveCanonicalText(newKhataClientName, knownCustomerNames);
      const duplicate = (state.khataClients || []).some(
        client =>
          client.name.trim().toUpperCase() === trimmed.toUpperCase() &&
@@ -722,19 +748,17 @@ export default function OwnerDashboard({
 
   const handleAddCustomer = (e: React.FormEvent) => {
     e.preventDefault();
-    const normalizedVehicle = normalizeVehicleNumber(vehicle);
-    const matchedCustomer = state.customers.find(
-      customer =>
-        normalizeVehicleNumber(customer.vehicleNumber) === normalizedVehicle &&
-        customer.customerName?.trim() &&
-        customer.id !== editingId
-    );
-    // CRITICAL: Always prioritize the manually entered name (custName) over any matched customer.
-    // Auto-fill should only be a suggestion in the UI, not a forced override during save.
-    const resolvedCustomerName = custName.trim();
+    const resolvedCustomerName = resolveCanonicalText(custName, knownCustomerNames);
+    const resolvedMaterial = resolveCanonicalText(material, knownMaterials);
+    const resolvedSite = resolveCanonicalText(site, knownSites);
     
     if (!resolvedCustomerName) {
       alert('Customer name is required');
+      return;
+    }
+
+    if (!resolvedMaterial) {
+      alert('Material is required');
       return;
     }
 
@@ -742,24 +766,24 @@ export default function OwnerDashboard({
     const tripsNum = isNaN(parseInt(trips)) ? 1 : parseInt(trips);
     const brassNum = isNaN(parseFloat(brass)) ? 0 : parseFloat(brass);
     const weightNum = isNaN(parseFloat(weight)) ? 0 : parseFloat(weight);
-    const regularRateConfig = getRegularRateConfig(resolvedCustomerName, material, rateNum, rateUnit);
+    const regularRateConfig = getRegularRateConfig(resolvedCustomerName, resolvedMaterial, rateNum, rateUnit);
     const totalAmount = custType === 'REGULAR'
-      ? calculateRegularAmount(resolvedCustomerName, material, brassNum, weightNum, tripsNum, rateNum, rateUnit)
+      ? calculateRegularAmount(resolvedCustomerName, resolvedMaterial, brassNum, weightNum, tripsNum, rateNum, rateUnit)
       : calculateAmountByUnit(rateUnit, rateNum, brassNum, weightNum, tripsNum);
     const paid = custType === 'REGULAR' ? 0 : (parseFloat(paidAmount) || 0);
 
     if (editingId) {
       // For edit - sync to backend with updateFlag
-      (setCustomers as any)({ id: editingId, updateFlag: true, date: custDate, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: site.trim(), customerType: custType, material: material, trips: tripsNum, brass: brassNum, weight: weightNum, rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit, rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
+      (setCustomers as any)({ id: editingId, updateFlag: true, date: custDate, vehicleNumber: vehicle, customerName: resolvedCustomerName, site: resolvedSite, customerType: custType, material: resolvedMaterial, trips: tripsNum, brass: brassNum, weight: weightNum, rateUnit: custType === 'REGULAR' ? regularRateConfig.rateUnit : rateUnit, rate: custType === 'REGULAR' ? regularRateConfig.rate : rateNum, amount: totalAmount, paidAmount: paid, status: (parseFloat(paidAmount) || 0) >= totalAmount ? 'PAID' : 'PENDING', addedBy: state.currentUser?.name || 'Unknown', addedById: state.currentUser?.id || '' });
     } else {
       const newEntry = {
         id: Math.random().toString(36).substr(2, 9),
         date: custDate,
         vehicleNumber: vehicle,
         customerName: resolvedCustomerName,
-        site: site.trim(),
+        site: resolvedSite,
         customerType: custType,
-        material: material,
+        material: resolvedMaterial,
         trips: tripsNum,
         brass: brassNum,
         weight: weightNum,
@@ -785,8 +809,8 @@ export default function OwnerDashboard({
         (setKhataClients as any)({ name: resolvedCustomerName, applyGst: false });
       }
       // Always create/update rate entry for the material (rate can be 0)
-      if ((material || '').trim()) {
-        (setCustomerRates as any)({ customerName: resolvedCustomerName, material: material, rate: rateNum, rateUnit });
+      if (resolvedMaterial) {
+        (setCustomerRates as any)({ customerName: resolvedCustomerName, material: resolvedMaterial, rate: rateNum, rateUnit });
       }
     }
 
@@ -843,6 +867,10 @@ export default function OwnerDashboard({
     setSearchTerm('');
     setCustomerTypeFilter('ALL');
   }, [activeTab]);
+
+  useEffect(() => {
+    setVisibleCustomerCount(30);
+  }, [searchTerm, customerTypeFilter, activeTab]);
   
   const filteredCustomers = useMemo(() => {
     let result = state.customers;
@@ -866,6 +894,11 @@ export default function OwnerDashboard({
       c.addedBy.toLowerCase().includes(term)
     );
   }, [state.customers, searchTerm, customerTypeFilter]);
+
+  const visibleCustomers = useMemo(
+    () => filteredCustomers.slice(0, visibleCustomerCount),
+    [filteredCustomers, visibleCustomerCount]
+  );
 
   const filteredMaintenance = useMemo(() => {
     if (!searchTerm) return state.maintenance;
@@ -1162,7 +1195,7 @@ export default function OwnerDashboard({
             </tr>
           </thead>
           <tbody className="divide-y divide-border-subtle">
-            {filteredCustomers.map((customer) => (
+            {visibleCustomers.map((customer) => (
               <tr key={customer.id} className="hover:bg-bg-surface/50 transition-colors group">
                 <td className="px-6 py-4 text-xs font-medium text-text-muted">{formatDate(customer.date)}</td>
                 <td className="px-6 py-4">
@@ -1236,7 +1269,7 @@ export default function OwnerDashboard({
         </table>
         </div>
         <div className="lg:hidden space-y-3">
-          {filteredCustomers.map((customer) => {
+          {visibleCustomers.map((customer) => {
             const totalAmount = customer.customerType === 'REGULAR'
               ? calculateRegularAmount(customer.customerName, customer.material, customer.brass, customer.weight || 0, customer.trips || 1, customer.rate, customer.rateUnit || 'PER_BRASS')
               : customer.amount;
@@ -1298,6 +1331,16 @@ export default function OwnerDashboard({
             );
           })}
         </div>
+        {filteredCustomers.length > visibleCustomerCount && (
+          <div className="flex justify-center border-t border-border-subtle px-6 py-4">
+            <button
+              onClick={() => setVisibleCustomerCount(prev => prev + 30)}
+              className="rounded-lg border border-border-subtle bg-bg-surface px-4 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-text-main transition hover:bg-white"
+            >
+              Load More Records
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2105,7 +2148,7 @@ export default function OwnerDashboard({
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Customer Name</label>
             <input 
               type="text" required value={custName} onChange={e => {
-                setCustName(e.target.value);
+                setCustName(resolveCanonicalText(e.target.value, knownCustomerNames));
                 // Check if Khata client
                 const name = (e.target.value || '').trim().toUpperCase();
                 const isKhata = state.khataClients.some(k => (k.name || '').trim().toUpperCase() === name);
@@ -2129,7 +2172,7 @@ export default function OwnerDashboard({
               <input 
                 type="text"
                 value={site}
-                onChange={e => setSite(e.target.value)}
+                onChange={e => setSite(resolveCanonicalText(e.target.value, knownSites))}
                 className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
                 placeholder="Delivery Site / Location"
               />
@@ -2138,7 +2181,7 @@ export default function OwnerDashboard({
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material</label>
             <input 
-              type="text" required value={material} onChange={e => setMaterial(e.target.value)}
+              type="text" required value={material} onChange={e => setMaterial(resolveCanonicalText(e.target.value, knownMaterials))}
               list="khata-materials"
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
               placeholder="e.g. 20mm aggregate"
@@ -2355,7 +2398,7 @@ export default function OwnerDashboard({
                 type="text"
                 required
                 value={newKhataClientName}
-                onChange={e => setNewKhataClientName(e.target.value)}
+                onChange={e => setNewKhataClientName(resolveCanonicalText(e.target.value, knownCustomerNames))}
                 readOnly={Boolean(editingKhataClientId)}
                 className="w-full pl-10 pr-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
                 placeholder="Business Name or Owner Name"
@@ -2406,7 +2449,7 @@ export default function OwnerDashboard({
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Regular Customer Name</label>
             <input 
-              type="text" required value={khataCustName} onChange={e => setKhataCustName(e.target.value)}
+              type="text" required value={khataCustName} onChange={e => setKhataCustName(resolveCanonicalText(e.target.value, knownCustomerNames))}
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
               placeholder="e.g. Mauli Builders"
             />
@@ -2414,7 +2457,7 @@ export default function OwnerDashboard({
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Material Type</label>
             <input 
-              type="text" required value={khataMaterial} onChange={e => setKhataMaterial(e.target.value)}
+              type="text" required value={khataMaterial} onChange={e => setKhataMaterial(resolveCanonicalText(e.target.value, knownMaterials))}
               className="w-full px-4 py-2.5 bg-bg-surface border border-border-subtle rounded-lg text-xs font-bold text-text-main focus:ring-1 focus:ring-primary outline-none uppercase"
               placeholder="e.g. 20mm aggregate"
             />
