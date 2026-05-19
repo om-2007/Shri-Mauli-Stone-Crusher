@@ -59,7 +59,7 @@ export async function GET(request: Request, context: RouteContext) {
       return NextResponse.json(await getSystemState());
     }
 
-    if (segments.length === 1 && segments[0] === 'cron' && segments[1] === 'day-status') {
+    if (segments.length === 2 && segments[0] === 'cron' && segments[1] === 'day-status') {
       await safeInitDb();
       await autoUpdateDayStatus();
       return NextResponse.json({ success: true });

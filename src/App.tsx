@@ -51,6 +51,39 @@ const getScopeForTab = (role: UserRole | undefined, tab: string) => {
   }
 };
 
+const hasCachedDataForScope = (scope: string, state: {
+  customers: any[];
+  maintenance: any[];
+  salaries: any[];
+  assistants: any[];
+  customerRates: any[];
+  khataClients: any[];
+  khataPayments: any[];
+  ownerProfile: any;
+}) => {
+  switch (scope) {
+    case 'bootstrap':
+    case 'settings':
+      return Boolean(state.ownerProfile || state.assistants.length);
+    case 'dashboard':
+      return state.customers.length > 0 || state.maintenance.length > 0 || state.salaries.length > 0;
+    case 'assistant-dashboard':
+      return state.customers.length > 0 || state.maintenance.length > 0;
+    case 'customers':
+      return state.customers.length > 0 || state.customerRates.length > 0 || state.khataClients.length > 0;
+    case 'maintenance':
+      return state.maintenance.length > 0;
+    case 'salaries':
+      return state.salaries.length > 0;
+    case 'khata':
+      return state.khataClients.length > 0 || state.khataPayments.length > 0 || state.customerRates.length > 0;
+    case 'staff':
+      return state.assistants.length > 0;
+    default:
+      return false;
+  }
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     try {
@@ -155,6 +188,7 @@ export default function App() {
   useEffect(() => { if (currentUser) localStorage.setItem('currentUser', JSON.stringify(currentUser)); }, [currentUser]);
 
   const activeScope = getScopeForTab(currentUser?.role, activeTab);
+  const cachedBootstrapAvailable = Boolean(ownerProfile || assistants.length || currentUser);
 
   const addToPendingSync = (action: string, collection: string, data: any) => {
     const id = data.id || Date.now().toString();
@@ -317,7 +351,14 @@ export default function App() {
 
   const runRefreshData = async (label: string, scope = activeScope) => {
     try {
-      const res = await fetchWithTimeout(`/api/data?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' }, scope === 'bootstrap' ? 8000 : 15000);
+      const timeoutMs =
+        scope === 'bootstrap'
+          ? 20000
+          : scope === 'dashboard' || scope === 'customers' || scope === 'khata' || scope === 'assistant-dashboard'
+            ? 25000
+            : 15000;
+
+      const res = await fetchWithTimeout(`/api/data?scope=${encodeURIComponent(scope)}`, { cache: 'no-store' }, timeoutMs);
       if (!res) {
         throw new Error('Request timeout');
       }
@@ -326,7 +367,20 @@ export default function App() {
       applyServerData(data, scope);
       return data;
     } catch (err: any) {
-      setSetupError(scope === 'bootstrap' ? 'Unable to load app data right now.' : setupError);
+      const hasCache = hasCachedDataForScope(scope, {
+        customers,
+        maintenance,
+        salaries,
+        assistants,
+        customerRates,
+        khataClients,
+        khataPayments,
+        ownerProfile,
+      });
+
+      if (!hasCache) {
+        setSetupError(scope === 'bootstrap' ? 'Unable to load app data right now.' : `Unable to load ${scope} data right now.`);
+      }
       console.error(`[REFRESH] ${label} failed:`, err);
       return null;
     }
@@ -375,6 +429,11 @@ export default function App() {
 
   // Fetch data on mount
   useEffect(() => {
+    if (cachedBootstrapAvailable) {
+      setLoading(false);
+      setLoadedScopes(prev => (prev.includes('bootstrap') ? prev : [...prev, 'bootstrap']));
+    }
+
     refreshData('Bootstrap fetch', 'bootstrap')
       .finally(() => {
         setLoading(false);
@@ -387,11 +446,26 @@ export default function App() {
     const scope = getScopeForTab(currentUser.role, activeTab);
     if (loadedScopes.includes(scope)) return;
 
+    if (hasCachedDataForScope(scope, {
+      customers,
+      maintenance,
+      salaries,
+      assistants,
+      customerRates,
+      khataClients,
+      khataPayments,
+      ownerProfile,
+    })) {
+      setLoadedScopes(prev => (prev.includes(scope) ? prev : [...prev, scope]));
+      void refreshData(`Background load ${scope}`, scope);
+      return;
+    }
+
     setActiveScopeLoading(true);
     refreshData(`Load ${scope}`, scope).finally(() => {
       setActiveScopeLoading(false);
     });
-  }, [currentUser, activeTab, loadedScopes]);
+  }, [currentUser, activeTab, loadedScopes, customers, maintenance, salaries, assistants, customerRates, khataClients, khataPayments, ownerProfile]);
 
   // Poll day status every 60 seconds to sync with automatic start/end
   useEffect(() => {

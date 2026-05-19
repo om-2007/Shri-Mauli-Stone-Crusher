@@ -5,6 +5,7 @@ const { Pool } = pg;
 
 let poolInstance: pg.Pool | null = null;
 let initPromise: Promise<void> | null = null;
+const ensurePromises = new Map<string, Promise<void>>();
 
 function getDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL;
@@ -89,6 +90,199 @@ function resolveCanonicalText(input: string, candidates: string[]) {
   const normalizedInput = normalizeComparableText(trimmed);
   const match = candidates.find(candidate => normalizeComparableText(candidate) === normalizedInput);
   return match ? match.trim().replace(/\s+/g, ' ') : trimmed;
+}
+
+async function ensureOnce(key: string, work: () => Promise<void>) {
+  const existing = ensurePromises.get(key);
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  const promise = work().catch((error) => {
+    ensurePromises.delete(key);
+    throw error;
+  });
+  ensurePromises.set(key, promise);
+  await promise;
+}
+
+async function ensureCoreTables() {
+  getPool();
+  await ensureOnce('core', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS assistants (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      phone TEXT,
+      password TEXT
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS system_state (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )`);
+
+    await pool.query(
+      "INSERT INTO system_state (key, value) VALUES ('isDayStarted', 'false') ON CONFLICT (key) DO NOTHING"
+    );
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS owner_profile (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      phone TEXT,
+      password TEXT,
+      enableKhataReminders BOOLEAN DEFAULT TRUE,
+      enableMaintenanceAlerts BOOLEAN DEFAULT TRUE
+    )`);
+
+    await pool.query(
+      `INSERT INTO owner_profile (id, name, phone, password)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         phone = EXCLUDED.phone,
+         password = COALESCE(NULLIF(owner_profile.password, ''), EXCLUDED.password)`,
+      [DEFAULT_OWNER.id, DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password]
+    );
+    await pool.query(
+      `UPDATE owner_profile
+       SET name = $1,
+           phone = $2,
+           password = COALESCE(NULLIF(password, ''), $3)
+       WHERE id <> $4`,
+      [DEFAULT_OWNER.name, DEFAULT_OWNER.phone, DEFAULT_OWNER.password, DEFAULT_OWNER.id]
+    );
+  });
+}
+
+async function ensureCustomersTable() {
+  await ensureCoreTables();
+  await ensureOnce('customers', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS customers (
+      id TEXT PRIMARY KEY,
+      vehicleNumber TEXT,
+      customerName TEXT,
+      site TEXT,
+      customerType TEXT,
+      material TEXT,
+      trips TEXT,
+      brass TEXT,
+      weight TEXT,
+      rateUnit TEXT,
+      rate TEXT,
+      amount TEXT,
+      paidAmount TEXT,
+      status TEXT,
+      date TEXT,
+      addedBy TEXT,
+      addedById TEXT
+    )`);
+  });
+}
+
+async function ensureMaintenanceTable() {
+  await ensureCoreTables();
+  await ensureOnce('maintenance', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS maintenance (
+      id TEXT PRIMARY KEY,
+      type TEXT,
+      description TEXT,
+      amount TEXT,
+      date TEXT,
+      addedBy TEXT,
+      addedById TEXT
+    )`);
+  });
+}
+
+async function ensureSalariesTable() {
+  await ensureCoreTables();
+  await ensureOnce('salaries', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS salaries (
+      id TEXT PRIMARY KEY,
+      workerName TEXT,
+      role TEXT,
+      amount TEXT,
+      month TEXT,
+      date TEXT,
+      addedBy TEXT,
+      addedById TEXT
+    )`);
+  });
+}
+
+async function ensureKhataTables() {
+  await ensureCoreTables();
+  await ensureOnce('khata', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS khata_payments (
+      id TEXT PRIMARY KEY,
+      customerName TEXT,
+      amount TEXT,
+      paymentMethod TEXT,
+      description TEXT,
+      date TEXT,
+      addedBy TEXT,
+      addedById TEXT
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS khata_logs (
+      id TEXT PRIMARY KEY,
+      customerName TEXT,
+      amount TEXT,
+      date TEXT
+    )`);
+
+    await pool.query(`CREATE TABLE IF NOT EXISTS khata_clients (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      applyGst BOOLEAN DEFAULT FALSE
+    )`);
+  });
+}
+
+async function ensureCustomerRatesTable() {
+  await ensureCoreTables();
+  await ensureOnce('customer-rates', async () => {
+    await pool.query(`CREATE TABLE IF NOT EXISTS customer_rates (
+      id TEXT PRIMARY KEY,
+      customerName TEXT,
+      material TEXT,
+      rate TEXT,
+      rateUnit TEXT
+    )`);
+  });
+}
+
+async function ensureScopeTables(scope: string) {
+  switch (scope) {
+    case 'bootstrap':
+    case 'settings':
+      await ensureCoreTables();
+      return;
+    case 'maintenance':
+      await Promise.all([ensureCoreTables(), ensureMaintenanceTable()]);
+      return;
+    case 'salaries':
+      await Promise.all([ensureCoreTables(), ensureSalariesTable()]);
+      return;
+    case 'staff':
+      await Promise.all([ensureCoreTables(), ensureCustomersTable(), ensureMaintenanceTable()]);
+      return;
+    case 'customers':
+      await Promise.all([ensureCustomersTable(), ensureCustomerRatesTable(), ensureKhataTables()]);
+      return;
+    case 'assistant-dashboard':
+      await Promise.all([ensureCustomersTable(), ensureMaintenanceTable(), ensureCustomerRatesTable(), ensureKhataTables()]);
+      return;
+    case 'khata':
+      await Promise.all([ensureCustomersTable(), ensureCustomerRatesTable(), ensureKhataTables()]);
+      return;
+    case 'dashboard':
+      await Promise.all([ensureCustomersTable(), ensureMaintenanceTable(), ensureSalariesTable(), ensureKhataTables(), ensureCustomerRatesTable()]);
+      return;
+    default:
+      await safeInitDb();
+  }
 }
 
 export async function initDb() {
@@ -477,7 +671,7 @@ async function getCurrentDayStartedValue() {
 }
 
 export async function getBootstrapData() {
-  await safeInitDb();
+  await ensureScopeTables('bootstrap');
   await autoUpdateDayStatus();
 
   const [assistants, ownerProfile, isDayStarted] = await Promise.all([
@@ -498,9 +692,7 @@ export async function getBootstrapData() {
 }
 
 export async function getScopedAppData(scope: string) {
-  await safeInitDb();
-  await autoUpdateDayStatus();
-
+  await ensureScopeTables(scope);
   const base = await getBootstrapData();
 
   switch (scope) {
@@ -632,14 +824,14 @@ export async function getScopedAppData(scope: string) {
 }
 
 export async function getSystemState() {
-  await safeInitDb();
+  await ensureCoreTables();
   const systemState = await pool.query("SELECT * FROM system_state");
   const isDayStarted = systemState.rows.find((row: any) => row.key === 'isDayStarted')?.value === 'true';
   return { isDayStarted };
 }
 
 export async function updateSystemState(key: string, value: unknown) {
-  await safeInitDb();
+  await ensureCoreTables();
   await pool.query(
     `INSERT INTO system_state (key, value)
      VALUES ($1, $2)
@@ -651,7 +843,7 @@ export async function updateSystemState(key: string, value: unknown) {
 }
 
 export async function updateSettings(payload: any) {
-  await safeInitDb();
+  await ensureCoreTables();
   const { id, name, phone, role, enableKhataReminders, enableMaintenanceAlerts } = payload;
 
   if (name !== undefined && phone !== undefined) {
@@ -691,8 +883,6 @@ export async function updateSettings(payload: any) {
 }
 
 export async function deleteCollectionRecord(collection: string, id: string) {
-  await safeInitDb();
-
   const tableMap: Record<string, string> = {
     customers: 'customers',
     maintenance: 'maintenance',
@@ -710,6 +900,13 @@ export async function deleteCollectionRecord(collection: string, id: string) {
     throw new Error('Collection not found');
   }
 
+  if (tableName === 'customers') await ensureCustomersTable();
+  else if (tableName === 'maintenance') await ensureMaintenanceTable();
+  else if (tableName === 'salaries') await ensureSalariesTable();
+  else if (tableName === 'khata_payments' || tableName === 'khata_clients') await ensureKhataTables();
+  else if (tableName === 'customer_rates') await ensureCustomerRatesTable();
+  else if (tableName === 'assistants') await ensureCoreTables();
+
   if (tableName === 'khata_clients') {
     await pool.query('DELETE FROM khata_clients WHERE id = $1', [id]);
   } else {
@@ -720,7 +917,7 @@ export async function deleteCollectionRecord(collection: string, id: string) {
 }
 
 export async function saveCustomer(payload: any) {
-  await safeInitDb();
+  await ensureCustomersTable();
   const {
     id,
     vehicleNumber,
@@ -785,7 +982,7 @@ export async function saveCustomer(payload: any) {
     resolvedSite = resolveCanonicalText(resolvedSite, canonicalSite);
   }
 
-  const date = new Date().toISOString();
+  const date = payload.date || new Date().toISOString();
 
   if (id && updateFlag) {
     await pool.query(
@@ -850,7 +1047,7 @@ export async function updateCustomer(id: string, payload: any) {
 }
 
 export async function saveMaintenance(payload: any) {
-  await safeInitDb();
+  await ensureMaintenanceTable();
   const { type, description, amount, addedBy, addedById } = payload;
   if (amount === undefined) {
     throw new Error('Amount required');
@@ -869,7 +1066,7 @@ export async function saveMaintenance(payload: any) {
 }
 
 export async function updateMaintenance(id: string, payload: any) {
-  await safeInitDb();
+  await ensureMaintenanceTable();
   const { type, description, amount, addedBy, addedById } = payload;
   if (amount === undefined) {
     throw new Error('Amount required');
@@ -900,7 +1097,7 @@ export async function updateMaintenance(id: string, payload: any) {
 }
 
 export async function saveSalary(payload: any) {
-  await safeInitDb();
+  await ensureSalariesTable();
   const { workerName, role, amount, month, addedBy, addedById } = payload;
   if (amount === undefined) {
     throw new Error('Amount required');
@@ -919,7 +1116,7 @@ export async function saveSalary(payload: any) {
 }
 
 export async function saveKhataPayment(payload: any) {
-  await safeInitDb();
+  await ensureKhataTables();
   const { id, customerName, amount, paymentMethod, description, date, addedBy, addedById } = payload;
 
   if (!customerName || amount === undefined) {
@@ -950,7 +1147,7 @@ export async function saveKhataPayment(payload: any) {
 }
 
 export async function saveCustomerRate(payload: any) {
-  await safeInitDb();
+  await ensureCustomerRatesTable();
   const { customerName, material, rate, rateUnit } = payload;
 
   if (!customerName || !material) {
@@ -987,7 +1184,7 @@ export async function saveCustomerRate(payload: any) {
 }
 
 export async function saveAssistant(payload: any) {
-  await safeInitDb();
+  await ensureCoreTables();
   const { name, phone, password } = payload;
   const id = Date.now().toString();
 
@@ -1000,7 +1197,7 @@ export async function saveAssistant(payload: any) {
 }
 
 export async function saveKhataClient(payload: any) {
-  await safeInitDb();
+  await ensureKhataTables();
   const { id, name, applyGst } = payload;
   const normalizedName = (name || '').trim();
 
